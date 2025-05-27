@@ -1,0 +1,17 @@
+chemfunc==1.0.3
+chemprop==1.5.2
+colorama
+configargparse
+descriptastorus==2.6.0
+h5py
+matplotlib==3.7.1
+numpy==1.24.3
+pandas==2.0.1
+paretoset==1.2.4
+pytdc
+rdkit
+scikit-learn==1.2.2
+scipy==1.10.1
+torch==2.0.1
+tqdm==4.65.0
+typed-argument-parser==1.8.0
