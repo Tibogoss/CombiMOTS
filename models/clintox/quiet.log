@@ -1,0 +1,53 @@
+Fold 0
+Model 0 best validation auc = 0.895536 on epoch 14
+Model 0 test auc = 0.900586
+Ensemble test auc = 0.900586
+Fold 1
+Model 0 best validation auc = 0.907246 on epoch 15
+Model 0 test auc = 0.909821
+Ensemble test auc = 0.909821
+Fold 2
+Model 0 best validation auc = 0.906475 on epoch 28
+Model 0 test auc = 0.885507
+Ensemble test auc = 0.885507
+Fold 3
+Model 0 best validation auc = 0.956023 on epoch 17
+Model 0 test auc = 0.867306
+Ensemble test auc = 0.867306
+Fold 4
+Model 0 best validation auc = 0.950368 on epoch 24
+Model 0 test auc = 0.948827
+Ensemble test auc = 0.948827
+Fold 5
+Model 0 best validation auc = 0.858513 on epoch 24
+Model 0 test auc = 0.950368
+Ensemble test auc = 0.950368
+Fold 6
+Model 0 best validation auc = 0.924242 on epoch 24
+Model 0 test auc = 0.876099
+Ensemble test auc = 0.876099
+Fold 7
+Model 0 best validation auc = 0.867953 on epoch 26
+Model 0 test auc = 0.911458
+Ensemble test auc = 0.911458
+Fold 8
+Model 0 best validation auc = 0.873214 on epoch 8
+Model 0 test auc = 0.852022
+Ensemble test auc = 0.852022
+Fold 9
+Model 0 best validation auc = 0.917644 on epoch 27
+Model 0 test auc = 0.828571
+Ensemble test auc = 0.828571
+10-fold cross validation
+	Seed 42 ==> test auc = 0.900586
+	Seed 43 ==> test auc = 0.909821
+	Seed 44 ==> test auc = 0.885507
+	Seed 45 ==> test auc = 0.867306
+	Seed 46 ==> test auc = 0.948827
+	Seed 47 ==> test auc = 0.950368
+	Seed 48 ==> test auc = 0.876099
+	Seed 49 ==> test auc = 0.911458
+	Seed 50 ==> test auc = 0.852022
+	Seed 51 ==> test auc = 0.828571
+Overall test auc = 0.893057 +/- 0.037311
+Elapsed time = 0:11:23
