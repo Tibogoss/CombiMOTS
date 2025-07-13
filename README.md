@@ -1,5 +1,15 @@
-# CombiMOTS: Combinatorial Multi-Objective Tree Search for Dual-Target Molecule Generation
-Official implementation of CombiMOTS for Fragment-based Monte Carlo Tree Search for Dual-Inhibitors Molecular Graph Generation
+<h1 align="center">CombiMOTS: Combinatorial Multi-Objective Tree Search for Dual-Target Molecule Generation</h1>
+<p align="center">
+    <a href="https://openreview.net/forum?id=FSlTEObdLl"><img src="https://img.shields.io/badge/OpenReview-ICML'25.16227-b31b1b.svg" alt="Paper"></a>
+    <a href="https://icml.cc/media/PosterPDFs/ICML%202025/45885.png?t=1752232241.6172879"> <img src="https://img.shields.io/badge/Poster-grey?logo=airplayvideo&logoColor=white" alt="Poster"></a>
+    <a href="./assets/ICML2025-CombiMOTS_Slides.pdf"> <img src="https://img.shields.io/badge/Slides-grey?&logo=MicrosoftPowerPoint&logoColor=white" alt="Slides"></a>
+</p>
+Official implementation of CombiMOTS for Fragment-based Monte Carlo Tree Search for Dual-Inhibitors Molecular Graph Generation.
+
+Refer to `Poster` or `Slides` for a more in-depth overview of our work!
+
+<p align="center"><img src="./assets/overview.png" width=80%></p>
+<p align="center">Project overview.</p>
 
 # Baseline papers
 Activity-aware fragments are obtained with Graph Information Bottleneck - Adapted from https://arxiv.org/abs/2310.00841
@@ -202,4 +212,17 @@ python 10-evaluate.py --model models/${model_name} \
 --training {path_to_dual_positives_of_training_set_csv}
 
 # $ python 10-evaluate.py --generation generations/gsk3b_jnk3/pareto_dual_actives.csv --training data/GSK3B_dual_actives.csv
+```
+
+If you find our paper/repo useful or use it for personal projects/research, please cite our original paper: -->
+
+```bibtex -->
+@inproceedings{
+southiratn2025combimots,
+title={Combi{MOTS}: Combinatorial Multi-Objective Tree Search for Dual-Target Molecule Generation},
+author={Thibaud Southiratn and Bonil Koo and Yijingxiu Lu and Sun Kim},
+booktitle={Forty-second International Conference on Machine Learning},
+year={2025},
+url={https://openreview.net/forum?id=FSlTEObdLl}
+}
 ```
