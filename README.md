@@ -14,7 +14,7 @@ Refer to `Poster` or `Slides` for a more in-depth overview of our work!
 ### Broader Applications
 
 - We release a pretrained ensemble ChemProp ClinTox model in `models/clintox` that can be used for Toxicity Optimization as described in our original manuscript.
-- We created another repository (<a href="https://github.com/Tibogoss/KinSel"> <img src="https://img.shields.io/badge/KinSel-grey?&logo=MicrosoftPowerPoint&logoColor=white" alt="KinSel"> </a>) using CombiMOTS for the Selective Molecular Generation (using CDK7 as the target). Our main manuscript also discusses provides motivation background and implementation details.
+- We created another repository (<a href="https://github.com/Tibogoss/KinSel"> <img src="https://img.shields.io/badge/KinSel-grey?&logo=MicrosoftPowerPoint&logoColor=white" alt="KinSel"> </a>) using CombiMOTS for the Selective Molecular Generation (using CDK7 as the target). Our main manuscript also discusses motivation background and implementation details.
 
 # Baseline papers
 Activity-aware fragments are obtained with Graph Information Bottleneck - Adapted from https://arxiv.org/abs/2310.00841
