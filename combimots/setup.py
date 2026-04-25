@@ -43,13 +43,15 @@ setup(
         'numpy',
         'pandas',
         'paretoset==1.2.4',
-        'pytdc',
-        'torch',
         'scikit-learn',
         'scipy',
+        'setuptools<81',
         'tqdm',
         'typed-argument-parser>=1.8.0'
     ],
+    extras_require={
+        'qed-sa': ['pytdc'],
+    },
     python_requires='>=3.10',
     classifiers=[
         'Programming Language :: Python :: 3',

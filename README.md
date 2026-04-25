@@ -27,78 +27,65 @@ To accelerate molecular docking simulation, we utilize **QuickVina-GPU-2.1** fro
 
 
 # Install Environment
-Implementation was originally conducted with Python3.10 and CUDA11.7 on a single NVIDIA RTX A6000 GPU or CPU. For a fresh conda-based machine, use the root setup script:
+Implementation was originally conducted with Python 3.10 and CUDA 11.7. The recommended setup is hybrid: conda owns binary/system packages, uv owns Python packages, and CUDA Torch/PyG wheels are installed explicitly.
 
 ```sh
 bash setup_fresh_env.sh combimots
+conda activate combimots
+if [ -d /etc/OpenCL/vendors ]; then export OCL_ICD_VENDORS=/etc/OpenCL/vendors; fi
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
 ```
 
-The equivalent manual setup is:
+Useful setup variants:
 
 ```sh
-conda create -n combimots python=3.10 -y
-conda activate combimots
-
-conda install -c bioconda mgltools -y
-conda install -c nvidia/label/cuda-11.7.0 cuda-nvcc -y
-conda install -c nvidia cuda-opencl -y
-conda install -c conda-forge ocl-icd-system -y
-
-conda install -c conda-forge boost-cpp pdbfixer openbabel openmm rdkit 'zlib>=1.2.13' gxx_linux-64 -y
-
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
-
-pip install torch==2.0.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
-pip install torch-scatter torch-sparse torch-cluster -f https://data.pyg.org/whl/torch-2.0.1+cu117.html
-pip install torch-geometric==2.0.4
-
-pip install -r requirements.txt
-pip install -e combimots/. # setup combimots in-line command
+RECREATE_ENV=1 bash setup_fresh_env.sh combimots       # rebuild an existing env
+WITH_MGLTOOLS=1 bash setup_fresh_env.sh combimots      # try legacy MGLTools install
+WITH_DOCKING_SETUP=0 bash setup_fresh_env.sh combimots # skip QuickVina clone/setup
 ```
 
-## Fresh Clone Docking Setup
+`requirements.txt` intentionally excludes conda-managed or driver-sensitive packages such as `rdkit`, PyG extension wheels, OpenBabel, and MGLTools. PyTDC is optional because current PyPI metadata can pull a PyPI RDKit wheel; install it separately only if you need `--qed_sa`, `--all_objectives`, or QED/SA evaluation metrics.
 
-Docking needs QuickVina-GPU-2.1 cloned and compiled separately. The helper below clones it into the expected ignored directory, writes `.env`, and installs the CombiMOTS QuickVina Makefile template:
+## Docking Setup
+
+QuickVina-GPU-2.1 is cloned and configured by the setup helper. It writes `.env` with `COMBIMOTS_DOCKING_PATH`, replacing the old workflow of editing `DOCKING_PATH_PREFIX` in Python files.
 
 ```sh
 python setup_docking.py
-```
-
-If your Boost or CUDA/OpenCL paths differ from the QuickVina defaults, pass them explicitly:
-
-```sh
-python setup_docking.py \
-  --boost-lib-path "$CONDA_PREFIX" \
-  --opencl-lib-path /usr/local/cuda
-```
-
-To also try compiling QuickVina immediately:
-
-```sh
-python setup_docking.py --compile-source
-```
-
-Or compile manually from the QuickVina directory after running `setup_docking.py`:
-
-```sh
 cd combimots/pmcts/docking/Vina-GPU-2.1/QuickVina2-GPU-2.1
 make source
 cd -
-```
-
-If OpenCL is outside the conda environment, pass its absolute path without shell variable quotes:
-
-```sh
-make source OPENCL_LIB_PATH=/usr/local/cuda
-```
-
-After installing CombiMOTS, validate without running docking:
-
-```sh
 pmcts-validate-docking --target-pair gsk3b_jnk3
 ```
 
-The generated `.env` contains `COMBIMOTS_DOCKING_PATH`, which replaces the old workflow of editing `DOCKING_PATH_PREFIX` inside Python files.
+If Boost or OpenCL are installed outside the default conda paths, pass explicit paths:
+
+```sh
+python setup_docking.py --boost-lib-path "$CONDA_PREFIX" --opencl-lib-path /usr/local/cuda
+make -C combimots/pmcts/docking/Vina-GPU-2.1/QuickVina2-GPU-2.1 source OPENCL_LIB_PATH=/usr/local/cuda
+```
+
+Before running docking, `clinfo -l` should show an NVIDIA CUDA platform. On standard workstations or servers with NVIDIA drivers, this is usually enough:
+
+```sh
+export OCL_ICD_VENDORS=/etc/OpenCL/vendors
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
+clinfo -l
+```
+
+On HPC systems, load CUDA/NVIDIA modules before using CombiMOTS. If `module` fails with conda `libcrypt`/Lua errors, temporarily leave conda and clear loader variables first:
+
+```sh
+conda deactivate
+unset LD_LIBRARY_PATH OCL_ICD_VENDORS
+module load CUDA/12.8.0  # or the CUDA module provided by your cluster
+conda activate combimots
+export OCL_ICD_VENDORS=/etc/OpenCL/vendors
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
+clinfo -l
+```
+
+If QuickVina exits with `CL_PLATFORM_NOT_FOUND_KHR`, the binary compiled but OpenCL is not visible; fix `clinfo -l` before debugging CombiMOTS code.
 
 # Note to the user
 The next sections describe all pre-processing steps (running scripts 0 to 8).
@@ -106,13 +93,30 @@ The next sections describe all pre-processing steps (running scripts 0 to 8).
 If you only want to run generation and evaluation, **we provide processed data and model checkpoints**.
 You may skip these steps and directly go to the generation section.
 
-The new preprocessing runner can plan or run the full sequence while keeping the numbered scripts available:
+The new preprocessing runner can run the full sequence while keeping the numbered scripts available. Preview all steps first:
 
 ```sh
 combimots-preprocess \
   --target-pair gsk3b_jnk3 \
   --input-csv data/GSK3B_JNK3.csv \
   --dry-run
+```
+
+Run all preprocessing steps end-to-end by removing `--dry-run`:
+
+```sh
+combimots-preprocess \
+  --target-pair gsk3b_jnk3 \
+  --input-csv data/GSK3B_JNK3.csv
+```
+
+Resume a partially completed run with:
+
+```sh
+combimots-preprocess \
+  --target-pair gsk3b_jnk3 \
+  --input-csv data/GSK3B_JNK3.csv \
+  --resume
 ```
 
 Run a focused step or step range with:

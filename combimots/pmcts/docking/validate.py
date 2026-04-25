@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 from pmcts.config import DOCKING_TARGETS, SUPPORTED_TARGET_PAIRS, get_docking_path, load_env_file
@@ -60,11 +61,38 @@ def validate_docking_setup(
     if shutil.which("obabel") is None:
         errors.append("Open Babel executable 'obabel' was not found on PATH")
 
+    clinfo = shutil.which("clinfo")
+    if clinfo is None:
+        warnings.append("OpenCL diagnostic executable 'clinfo' was not found on PATH")
+    else:
+        opencl_env = _opencl_env()
+        result = subprocess.run([clinfo, "-l"], env=opencl_env, capture_output=True, text=True, check=False)
+        opencl_output = (result.stdout + result.stderr).strip()
+        if result.returncode != 0 or "Platform #" not in opencl_output:
+            warnings.append(
+                "No OpenCL platform detected by `clinfo -l`; QuickVina may fail with CL_PLATFORM_NOT_FOUND_KHR"
+            )
+
     return {
         "docking_path": str(root),
         "errors": errors,
         "warnings": warnings,
     }
+
+
+def _opencl_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if "OCL_ICD_VENDORS" in env:
+        return env
+
+    vendor_dirs = [Path("/etc/OpenCL/vendors")]
+    if env.get("CONDA_PREFIX"):
+        vendor_dirs.append(Path(env["CONDA_PREFIX"]) / "etc" / "OpenCL" / "vendors")
+    for vendor_dir in vendor_dirs:
+        if vendor_dir.exists():
+            env["OCL_ICD_VENDORS"] = str(vendor_dir)
+            break
+    return env
 
 
 def main() -> None:

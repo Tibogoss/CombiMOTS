@@ -20,6 +20,21 @@ def _ligand_id(smiles: str) -> str:
     return hashlib.sha256(smiles.encode("utf-8")).hexdigest()[:24]
 
 
+def _quickvina_env() -> dict[str, str]:
+    """Return an environment that can find the system OpenCL ICD when available."""
+
+    env = os.environ.copy()
+    if "OCL_ICD_VENDORS" not in env:
+        vendor_dirs = [Path("/etc/OpenCL/vendors")]
+        if env.get("CONDA_PREFIX"):
+            vendor_dirs.append(Path(env["CONDA_PREFIX"]) / "etc" / "OpenCL" / "vendors")
+        for vendor_dir in vendor_dirs:
+            if vendor_dir.exists():
+                env["OCL_ICD_VENDORS"] = str(vendor_dir)
+                break
+    return env
+
+
 def _prepare_single_ligand(args: Tuple[str, Path, Path]) -> Tuple[str, Path | None]:
     """Prepare a single ligand for docking.
     
@@ -176,6 +191,7 @@ opencl_binary_path = {docking_path}/Vina-GPU-2.1/QuickVina2-GPU-2.1""")
     vina_dir = docking_path / "Vina-GPU-2.1" / "QuickVina2-GPU-2.1"
     result = subprocess.run(['./QuickVina2-GPU-2-1', '--config', str(config_path.absolute())], 
                           cwd=vina_dir,
+                          env=_quickvina_env(),
                           capture_output=True,
                           text=True)
     
