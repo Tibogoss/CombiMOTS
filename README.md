@@ -27,65 +27,43 @@ To accelerate molecular docking simulation, we utilize **QuickVina-GPU-2.1** fro
 
 
 # Install Environment
-Implementation was originally conducted with Python 3.10 and CUDA 11.7. The recommended setup is hybrid: conda owns binary/system packages, uv owns Python packages, and CUDA Torch/PyG wheels are installed explicitly.
+Implementation was originally conducted with Python 3.10 and CUDA 11.7. The setup script creates the conda environment, installs Python dependencies with uv, and installs CombiMOTS editable from `combimots/.`.
 
 ```sh
 bash setup_fresh_env.sh combimots
-conda activate combimots
-if [ -d /etc/OpenCL/vendors ]; then export OCL_ICD_VENDORS=/etc/OpenCL/vendors; fi
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
 ```
 
-Useful setup variants:
-
-```sh
-RECREATE_ENV=1 bash setup_fresh_env.sh combimots       # rebuild an existing env
-WITH_MGLTOOLS=1 bash setup_fresh_env.sh combimots      # try legacy MGLTools install
-WITH_DOCKING_SETUP=0 bash setup_fresh_env.sh combimots # skip QuickVina clone/setup
-```
-
-`requirements.txt` intentionally excludes conda-managed or driver-sensitive packages such as `rdkit`, PyG extension wheels, OpenBabel, and MGLTools. PyTDC is optional because current PyPI metadata can pull a PyPI RDKit wheel; install it separately only if you need `--qed_sa`, `--all_objectives`, or QED/SA evaluation metrics.
-
-## Docking Setup
-
-QuickVina-GPU-2.1 is cloned and configured by the setup helper. It writes `.env` with `COMBIMOTS_DOCKING_PATH`, replacing the old workflow of editing `DOCKING_PATH_PREFIX` in Python files.
-
-```sh
-python setup_docking.py
-cd combimots/pmcts/docking/Vina-GPU-2.1/QuickVina2-GPU-2.1
-make source
-cd -
-pmcts-validate-docking --target-pair gsk3b_jnk3
-```
-
-If Boost or OpenCL are installed outside the default conda paths, pass explicit paths:
-
-```sh
-python setup_docking.py --boost-lib-path "$CONDA_PREFIX" --opencl-lib-path /usr/local/cuda
-make -C combimots/pmcts/docking/Vina-GPU-2.1/QuickVina2-GPU-2.1 source OPENCL_LIB_PATH=/usr/local/cuda
-```
-
-Before running docking, `clinfo -l` should show an NVIDIA CUDA platform. On standard workstations or servers with NVIDIA drivers, this is usually enough:
-
-```sh
-export OCL_ICD_VENDORS=/etc/OpenCL/vendors
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
-clinfo -l
-```
-
-On HPC systems, load CUDA/NVIDIA modules before using CombiMOTS. If `module` fails with conda `libcrypt`/Lua errors, temporarily leave conda and clear loader variables first:
+On HPC systems, load the CUDA/NVIDIA module before activating the environment:
 
 ```sh
 conda deactivate
 unset LD_LIBRARY_PATH OCL_ICD_VENDORS
 module load CUDA/12.8.0  # or the CUDA module provided by your cluster
-conda activate combimots
-export OCL_ICD_VENDORS=/etc/OpenCL/vendors
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
-clinfo -l
 ```
 
-If QuickVina exits with `CL_PLATFORM_NOT_FOUND_KHR`, the binary compiled but OpenCL is not visible; fix `clinfo -l` before debugging CombiMOTS code.
+Activate CombiMOTS and expose the NVIDIA OpenCL ICD:
+
+```sh
+conda activate combimots
+if [ -d /etc/OpenCL/vendors ]; then export OCL_ICD_VENDORS=/etc/OpenCL/vendors; fi
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
+```
+
+## Docking Setup
+
+Clone/configure QuickVina-GPU, compile it, and validate the docking setup:
+
+```sh
+python setup_docking.py
+(cd combimots/pmcts/docking/Vina-GPU-2.1/QuickVina2-GPU-2.1 && make source)
+pmcts-validate-docking --target-pair gsk3b_jnk3
+```
+
+Check OpenCL before running docking-heavy steps:
+
+```sh
+clinfo -l
+```
 
 # Note to the user
 The next sections describe all pre-processing steps (running scripts 0 to 8).
@@ -93,16 +71,7 @@ The next sections describe all pre-processing steps (running scripts 0 to 8).
 If you only want to run generation and evaluation, **we provide processed data and model checkpoints**.
 You may skip these steps and directly go to the generation section.
 
-The new preprocessing runner can run the full sequence while keeping the numbered scripts available. Preview all steps first:
-
-```sh
-combimots-preprocess \
-  --target-pair gsk3b_jnk3 \
-  --input-csv data/GSK3B_JNK3.csv \
-  --dry-run
-```
-
-Run all preprocessing steps end-to-end by removing `--dry-run`:
+The preprocessing runner can run the full sequence while keeping the numbered scripts available:
 
 ```sh
 combimots-preprocess \
@@ -110,19 +79,9 @@ combimots-preprocess \
   --input-csv data/GSK3B_JNK3.csv
 ```
 
-Resume a partially completed run with:
+Run a step range with:
 
 ```sh
-combimots-preprocess \
-  --target-pair gsk3b_jnk3 \
-  --input-csv data/GSK3B_JNK3.csv \
-  --resume
-```
-
-Run a focused step or step range with:
-
-```sh
-combimots-preprocess --target-pair gsk3b_jnk3 --input-csv data/GSK3B_JNK3.csv --step map-search-space
 combimots-preprocess --target-pair gsk3b_jnk3 --input-csv data/GSK3B_JNK3.csv --from-step similar-blocks --to-step filter-reactions --resume
 ```
 

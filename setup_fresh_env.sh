@@ -58,7 +58,7 @@ uv pip install --python "$UV_PYTHON" torch-geometric==2.0.4
 
 # Do not use `uv pip sync` yet: it can remove CUDA/PyG wheels unless the lock strategy includes alternate indexes.
 uv pip install --python "$UV_PYTHON" -r requirements.txt
-uv pip install --python "$UV_PYTHON" --no-deps -e .
+uv pip install --python "$UV_PYTHON" --no-deps -e combimots/.
 
 python -B -c "from setuptools import find_packages; print(find_packages('combimots'))"
 python -B -c "import pmcts, preprocess; print(pmcts.__version__)"
