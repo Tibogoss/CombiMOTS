@@ -5,7 +5,6 @@ import itertools
 from collections import Counter, defaultdict
 from functools import lru_cache
 from typing import Callable, List, Dict, Tuple
-from pathlib import Path
 
 import numpy as np
 from rdkit import Chem
@@ -16,8 +15,6 @@ from pmcts.docking.docking_utils import batch_dock
 from pmcts.reactions import Reaction
 from pmcts.utils import random_choice
 from pmcts.generate.utils import save_generated_molecules
-
-# from tdc import Oracle
 
 
 class Generator:
@@ -98,8 +95,13 @@ class Generator:
         self.sa_cache = {}
 
         if qed_sa or all_objectives:
-            self.oracle_qed = Oracle(name='QED')
-            self.oracle_sa = Oracle(name='SA')
+            try:
+                from tdc import Oracle
+            except ImportError as error:
+                raise ImportError("pytdc is required when qed_sa or all_objectives is enabled.") from error
+
+            self.oracle_qed = Oracle(name='qed')
+            self.oracle_sa = Oracle(name='sa')
             
             # Precompute QED and SA for building blocks
             if building_block_smiles_to_qed_sa:
@@ -163,7 +165,7 @@ class Generator:
         
         # check cache
         for mol in molecules:
-            if mol in self.qed_cache:
+            if mol in self.qed_cache and mol in self.sa_cache:
                 qed_values.append(self.qed_cache[mol])
                 sa_values.append(self.sa_cache[mol])
             else:
@@ -171,8 +173,8 @@ class Generator:
         
         # uncached molecules
         if uncached_molecules:
-            new_qed_values = self.oracle_qed(uncached_molecules)
-            new_sa_values = self.oracle_sa(uncached_molecules)
+            new_qed_values = self._call_oracle(self.oracle_qed, uncached_molecules, default=0.0)
+            new_sa_values = self._call_oracle(self.oracle_sa, uncached_molecules, default=0.0)
             
             # update cache
             for mol, qed_val, sa_val in zip(uncached_molecules, new_qed_values, new_sa_values):
@@ -181,10 +183,47 @@ class Generator:
                 qed_values.append(qed_val)
                 sa_values.append(sa_val)
         
-        avg_qed = sum(qed_values) / len(qed_values) if qed_values else 0
-        avg_sa = sum(sa_values) / len(sa_values) if sa_values else 0
+        avg_qed = sum(qed_values) / len(qed_values) if qed_values else 0.0
+        avg_sa = sum(sa_values) / len(sa_values) if sa_values else 0.0
         
         return avg_qed, avg_sa
+
+    @staticmethod
+    def _call_oracle(oracle, molecules: list[str], default: float) -> list[float]:
+        """Call a TDC Oracle in batch when possible, falling back to per-SMILES calls."""
+
+        try:
+            scores = oracle(molecules)
+            return Generator._oracle_scores(scores, len(molecules), default=default)
+        except Exception:
+            values = []
+            for molecule in molecules:
+                try:
+                    values.append(Generator._coerce_oracle_score(oracle(molecule), default))
+                except Exception:
+                    values.append(default)
+            return values
+
+    @staticmethod
+    def _oracle_scores(scores, expected_length: int, default: float) -> list[float]:
+        """Coerce TDC Oracle output to a list of finite floats."""
+
+        if expected_length == 1 and not isinstance(scores, (list, tuple, np.ndarray)):
+            scores = [scores]
+        values = list(scores)
+        if len(values) != expected_length:
+            raise ValueError(f"Oracle returned {len(values)} scores for {expected_length} molecules")
+        return [Generator._coerce_oracle_score(value, default) for value in values]
+
+    @staticmethod
+    def _coerce_oracle_score(value, default: float) -> float:
+        if value is None:
+            return default
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return default
+        return value if np.isfinite(value) else default
 
     def get_next_building_blocks(self, molecules: tuple[str]) -> list[str]:
         """Get the next building blocks that can be added to the given molecules.

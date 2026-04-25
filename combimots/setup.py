@@ -23,10 +23,13 @@ setup(
     download_url=f'',
     license='MIT',
     packages=find_packages(),
-    package_data={'pmcts': ['py.typed', 'resources/**/*']},
+    package_data={'pmcts': ['py.typed', 'resources/**/*', 'docking/*.pdbqt']},
     entry_points={
         'console_scripts': [
-            'pmcts=pmcts.generate.generate:generate_command_line'
+            'pmcts=pmcts.generate.generate:generate_command_line',
+            'pmcts-validate-docking=pmcts.docking.validate:main',
+            'combimots-setup-docking=pmcts.docking.setup_quickvina:main',
+            'combimots-preprocess=preprocess.runner:main'
         ]
     },
     install_requires=[
@@ -36,6 +39,8 @@ setup(
         'matplotlib',
         'numpy',
         'pandas',
+        'paretoset==1.2.4',
+        'pytdc',
         'torch',
         'rdkit',
         'scikit-learn',

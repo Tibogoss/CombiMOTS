@@ -1,4 +1,5 @@
 from time import time
+from pathlib import Path
 from rdkit import Chem
 
 import torch
@@ -13,7 +14,7 @@ warnings.filterwarnings('ignore')
 import random
 import numpy as np
 
-def get_custom_loader(target, batch_size):
+def get_custom_loader(target, batch_size, data_dir=Path('data')):
     """
     Get data loaders for custom dataset with target-specific data
     
@@ -23,7 +24,7 @@ def get_custom_loader(target, batch_size):
     """
     start_time = time()
     # Load target-specific processed data
-    save_path = f'data/{target.replace("_activity", "")}.pt'
+    save_path = Path(data_dir) / f'{target.replace("_activity", "")}.pt'
     try:
         train, test = torch.load(save_path)
     except FileNotFoundError:

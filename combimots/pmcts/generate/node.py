@@ -72,8 +72,7 @@ class Node:
         """
         return paretoset(scores, sense=["max"] * scores.shape[1])
 
-    @classmethod
-    def compute_score(cls, molecules: tuple[str], scoring_fn: Callable[[str], List[float]]) -> np.ndarray:
+    def compute_score(self, molecules: tuple[str], scoring_fn: Callable[[str], List[float]]) -> np.ndarray:
         """Computes the scores of the molecules.
 
         :param molecules: A tuple of SMILES. The first element is the currently constructed molecule

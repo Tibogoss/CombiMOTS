@@ -42,13 +42,6 @@ conda install -c conda-forge boost=1.77.0 boost-cpp=1.77.0 pdbfixer openbabel op
 
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
-####### Installation of QuickVina-GPU-2.1
-# In combimots/pmcts/docking, install and compile QuickVina-GPU-2.1 following https://github.com/DeltaGroupNJUPT/Vina-GPU-2.1
-
-# Once installed, modify the DOCKING_PATH_PREFIX in 
-# [combimots/pmcts/docking/docking_utils.py @l.16]
-# [6-precompute_docking_scores.py @l.16]
-
 pip install torch==2.0.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
 pip install torch-scatter torch-sparse torch-cluster -f https://data.pyg.org/whl/torch-2.0.1+cu117.html
 pip install torch-geometric==2.0.4
@@ -57,11 +50,57 @@ pip install -r requirements.txt
 pip install -e combimots/. # setup combimots in-line command
 ```
 
+## Fresh Clone Docking Setup
+
+Docking needs QuickVina-GPU-2.1 cloned and compiled separately. The helper below clones it into the expected ignored directory, writes `.env`, and patches QuickVina's `WORK_DIR` in its local Makefile:
+
+```sh
+python setup_docking.py
+```
+
+If your Boost or CUDA/OpenCL paths differ from the QuickVina defaults, pass them explicitly:
+
+```sh
+python setup_docking.py \
+  --boost-lib-path "$CONDA_PREFIX" \
+  --opencl-lib-path /usr/local/cuda
+```
+
+To also try compiling QuickVina immediately:
+
+```sh
+python setup_docking.py --compile-source
+```
+
+After installing CombiMOTS, validate without running docking:
+
+```sh
+pmcts-validate-docking --target-pair gsk3b_jnk3
+```
+
+The generated `.env` contains `COMBIMOTS_DOCKING_PATH`, which replaces the old workflow of editing `DOCKING_PATH_PREFIX` inside Python files.
+
 # Note to the user
 The next sections describe all pre-processing steps (running scripts 0 to 8).
 
 If you only want to run generation and evaluation, **we provide processed data and model checkpoints**.
 You may skip these steps and directly go to the generation section.
+
+The new preprocessing runner can plan or run the full sequence while keeping the numbered scripts available:
+
+```sh
+combimots-preprocess \
+  --target-pair gsk3b_jnk3 \
+  --input-csv data/GSK3B_JNK3.csv \
+  --dry-run
+```
+
+Run a focused step or step range with:
+
+```sh
+combimots-preprocess --target-pair gsk3b_jnk3 --input-csv data/GSK3B_JNK3.csv --step map-search-space
+combimots-preprocess --target-pair gsk3b_jnk3 --input-csv data/GSK3B_JNK3.csv --from-step similar-blocks --to-step filter-reactions --resume
+```
 
 # Pipeline
 

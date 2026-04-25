@@ -3,6 +3,7 @@
 import re
 import json
 import torch
+from pathlib import Path
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
@@ -188,7 +189,7 @@ class CustomDataClass(Dataset):
         graph, value = self.dataset[idx]
         return graph, value
 
-def process_data(csv_path, target, test_size=0.2, random_state=42):
+def process_data(csv_path, target, test_size=0.2, random_state=42, save_path=None):
     """
     Process custom CSV data into train and test sets for a specific target
     
@@ -198,8 +199,11 @@ def process_data(csv_path, target, test_size=0.2, random_state=42):
         test_size: Fraction of data to use for testing
         random_state: Random seed for reproducibility
     """
-    # Read the CSV file
     df = pd.read_csv(csv_path)
+    if 'smiles' not in df.columns:
+        raise ValueError(f"Input CSV must contain a 'smiles' column: {csv_path}")
+    if target not in df.columns:
+        raise ValueError(f"Input CSV must contain target column '{target}': {csv_path}")
     
     # Convert target column to float, keeping NaN values
     df[target] = pd.to_numeric(df[target], errors='coerce')
@@ -219,8 +223,8 @@ def process_data(csv_path, target, test_size=0.2, random_state=42):
     train = build_dataset(train_df, target)
     test = build_dataset(test_df, target)
     
-    # Save the processed data
-    save_path = f'data/{target.replace("_activity", "")}.pt'
+    save_path = Path(save_path) if save_path is not None else Path('data') / f'{target.replace("_activity", "")}.pt'
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save((train, test), save_path)
     print(f'Data saved to: {save_path}')
     print(f'Train: {len(train)} | Test: {len(test)}')
@@ -234,6 +238,7 @@ if __name__ == "__main__":
     parser.add_argument('--target', type=str, required=True, help='Target activity column name (e.g., GSK3B_activity)')
     parser.add_argument('--test_size', type=float, default=0.2, help='Fraction of data to use for testing')
     parser.add_argument('--random_state', type=int, default=42, help='Random seed')
+    parser.add_argument('--save_path', '--save-path', type=Path, default=None, help='Output .pt path (defaults to data/{target}.pt)')
     args = parser.parse_args()
     
-    train, test = process_data(args.csv_path, args.target, args.test_size, args.random_state)
+    train, test = process_data(args.csv_path, args.target, args.test_size, args.random_state, args.save_path)

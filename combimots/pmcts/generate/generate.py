@@ -13,11 +13,32 @@ from tap import tapify
 from pmcts.reactions import (
     Reaction,
     REACTIONS,
+    QueryMol,
     load_and_set_allowed_reaction_building_blocks,
     set_all_building_blocks
 )
+from pmcts.config import get_target_pair_mapping_path
 from pmcts.generate.generator import Generator
 from pmcts.generate.utils import create_model_scoring_fn, save_generated_molecules
+
+
+def _require_columns(data: pd.DataFrame, columns: list[str], context: str) -> None:
+    missing = [column for column in columns if column not in data.columns]
+    if missing:
+        raise ValueError(f"Missing required columns for {context}: {', '.join(missing)}")
+
+
+def _clone_reactions(reactions: tuple[Reaction]) -> tuple[Reaction, ...]:
+    """Clone reaction templates so per-run allowed building blocks do not mutate globals."""
+
+    return tuple(
+        Reaction(
+            reactants=[QueryMol(reactant.smarts_with_atom_mapping) for reactant in reaction.reactants],
+            product=QueryMol(reaction.product.smarts_with_atom_mapping),
+            reaction_id=reaction.id,
+        )
+        for reaction in reactions
+    )
 
 
 def generate(
@@ -75,6 +96,11 @@ def generate(
     :param n_proc: Number of processes to use for ligand preparation.
     :param sequential: Whether to run docking tasks sequentially.
     """
+    if sum([bool(qed_sa), bool(scalarize), bool(all_objectives)]) > 1:
+        raise ValueError("Use only one of qed_sa, scalarize, or all_objectives at a time.")
+
+    reactions = _clone_reactions(reactions)
+
     # Create save directory
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -83,6 +109,13 @@ def generate(
     building_block_data = pd.read_csv(building_blocks_path)
 
     print(f'Loaded {len(building_block_data):,} building blocks')
+
+    base_columns = [building_blocks_id_column, building_blocks_smiles_column, *target_activities]
+    docking_columns = ["ds_1", "ds_2"]
+    if qed_sa:
+        _require_columns(building_block_data, base_columns, "QED/SA generation")
+    else:
+        _require_columns(building_block_data, [*base_columns, *docking_columns], "activity/docking generation")
 
     # Ensure unique building block IDs
     if building_block_data[building_blocks_id_column].nunique() != len(building_block_data):
@@ -107,14 +140,17 @@ def generate(
             building_block_data[target_activities[1]])) # activity2
     }
 
-    building_block_smiles_to_docking_scores = {
-        0: dict(zip(
-            building_block_data[building_blocks_smiles_column],
-            building_block_data["ds_1"])), # dockingscore1
-        1: dict(zip(
-            building_block_data[building_blocks_smiles_column],
-            building_block_data["ds_2"])) # dockingscore2
-    }
+    if qed_sa:
+        building_block_smiles_to_docking_scores = [{}, {}]
+    else:
+        building_block_smiles_to_docking_scores = {
+            0: dict(zip(
+                building_block_data[building_blocks_smiles_column],
+                building_block_data["ds_1"])), # dockingscore1
+            1: dict(zip(
+                building_block_data[building_blocks_smiles_column],
+                building_block_data["ds_2"])) # dockingscore2
+        }
 
     print(f'Found {len(building_block_smiles_to_id):,} unique building blocks')
 
@@ -125,7 +161,7 @@ def generate(
     )
 
     # Optionally, set allowed building blocks for each reaction
-    reaction_to_building_blocks_path = Path(f'combimots/pmcts/resources/real/{target_pair}.pkl')
+    reaction_to_building_blocks_path = get_target_pair_mapping_path(target_pair)
     if reaction_to_building_blocks_path.exists():
         print('Loading and setting allowed building blocks for each reaction...')
         load_and_set_allowed_reaction_building_blocks(
@@ -145,14 +181,17 @@ def generate(
             print('Using QED and SA as objectives - No docking scores will be used')
         else:
             print('Using all objectives: activity1, activity2, dockingscore1, dockingscore2, qed, sa')
-        building_block_smiles_to_qed_sa = {
-        0: dict(zip(
-            building_block_data[building_blocks_smiles_column],
-            building_block_data["ds_1"])), # dockingscore1
-        1: dict(zip(
-            building_block_data[building_blocks_smiles_column],
-            building_block_data["ds_2"])) # dockingscore2
-    }
+        if "qed" in building_block_data.columns and "sa" in building_block_data.columns:
+            building_block_smiles_to_qed_sa = {
+                0: dict(zip(
+                    building_block_data[building_blocks_smiles_column],
+                    building_block_data["qed"])),
+                1: dict(zip(
+                    building_block_data[building_blocks_smiles_column],
+                    building_block_data["sa"]))
+            }
+        else:
+            building_block_smiles_to_qed_sa = None
     else:
         building_block_smiles_to_qed_sa = None
 

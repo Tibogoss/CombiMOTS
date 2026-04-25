@@ -1,6 +1,6 @@
-from functools import cache
+import hashlib
 from pathlib import Path
-from typing import Callable, List, Dict, Tuple
+from typing import List, Dict, Tuple
 import os
 import tempfile
 import subprocess
@@ -8,13 +8,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import Pool
 
 from pmcts.generate.node import Node
+from pmcts.config import get_docking_path, get_docking_tasks
 
-from rdkit import Chem
-from rdkit.Chem import AllChem
 
-####### SET YOUR DOCKING PATH PREFIX #######
-DOCKING_PATH_PREFIX = Path("/workspace/CombiMOTS/combimots/pmcts/docking")
-############################################
+DOCKING_PATH_PREFIX = get_docking_path()
+
+
+def _ligand_id(smiles: str) -> str:
+    """Return a deterministic filesystem-safe ligand ID for a SMILES string."""
+
+    return hashlib.sha256(smiles.encode("utf-8")).hexdigest()[:24]
 
 
 def _prepare_single_ligand(args: Tuple[str, Path, Path]) -> Tuple[str, Path | None]:
@@ -27,7 +30,7 @@ def _prepare_single_ligand(args: Tuple[str, Path, Path]) -> Tuple[str, Path | No
         Tuple of (smiles, pdbqt_path) if successful, (smiles, None) if failed
     """
     smiles, ligand_dir, tmp_path = args
-    name = hash(smiles)
+    name = _ligand_id(smiles)
     smiles_path = ligand_dir / f"{name}.smiles"
     mol2_path = ligand_dir / f"{name}.mol2"
     pdb_path = ligand_dir / f"{name}.pdb"
@@ -104,6 +107,9 @@ def _prepare_ligands(smiles_list: List[str], tmp_path: Path, n_proc: int = 48) -
     Returns:
         Dictionary mapping SMILES to their PDBQT file paths
     """
+    if not smiles_list:
+        return {}
+
     ligand_dir = tmp_path / "ligands"
     ligand_dir.mkdir(exist_ok=True)
     
@@ -143,6 +149,7 @@ def _run_docking(smiles_to_pdbqt: Dict[str, Path],
     output_dir = task_dir / "outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    docking_path = get_docking_path()
     config_path = task_dir / "config.txt"
     with open(config_path, 'w') as f:
         f.write(f"""receptor = {receptor_path}
@@ -157,7 +164,7 @@ num_modes = 5
 rilc_bfgs = 1
 ligand_directory = {(tmp_path / "ligands").absolute()}
 output_directory = {output_dir.absolute()}
-opencl_binary_path = {DOCKING_PATH_PREFIX}/Vina-GPU-2.1/QuickVina2-GPU-2.1""")
+opencl_binary_path = {docking_path}/Vina-GPU-2.1/QuickVina2-GPU-2.1""")
     
     """ # Debug: Print ligand directory contents
     print("\nLigand directory contents:")
@@ -166,7 +173,7 @@ opencl_binary_path = {DOCKING_PATH_PREFIX}/Vina-GPU-2.1/QuickVina2-GPU-2.1""")
     
     
     # Run QuickVina2-GPU
-    vina_dir = DOCKING_PATH_PREFIX / "Vina-GPU-2.1" / "QuickVina2-GPU-2.1"
+    vina_dir = docking_path / "Vina-GPU-2.1" / "QuickVina2-GPU-2.1"
     result = subprocess.run(['./QuickVina2-GPU-2-1', '--config', str(config_path.absolute())], 
                           cwd=vina_dir,
                           capture_output=True,
@@ -178,8 +185,8 @@ opencl_binary_path = {DOCKING_PATH_PREFIX}/Vina-GPU-2.1/QuickVina2-GPU-2.1""")
     #    print(f"stderr: {result.stderr}")
         
     scores = {}
-    for smiles in smiles_to_pdbqt:
-        output_path = output_dir / f"{hash(smiles)}_out.pdbqt"
+    for smiles, pdbqt_path in smiles_to_pdbqt.items():
+        output_path = output_dir / f"{pdbqt_path.stem}_out.pdbqt"
         try:
             with open(output_path) as f:
                 for line in f:
@@ -189,6 +196,7 @@ opencl_binary_path = {DOCKING_PATH_PREFIX}/Vina-GPU-2.1/QuickVina2-GPU-2.1""")
                         break
         except:
             scores[smiles] = 0.0 
+        scores.setdefault(smiles, 0.0)
             
     return scores
 
@@ -207,6 +215,9 @@ def batch_dock(child_nodes_mol: Dict[Node, Tuple[str]], target: str, n_proc: int
         ds1_scores: Docking scores against target 1
         ds2_scores: Docking scores against target 2
     """
+    if not child_nodes_mol:
+        return {}, {}
+
     os.makedirs("./tmp", exist_ok=True)
     with tempfile.TemporaryDirectory(dir="./tmp") as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -217,85 +228,7 @@ def batch_dock(child_nodes_mol: Dict[Node, Tuple[str]], target: str, n_proc: int
         
         smiles_to_pdbqt = _prepare_ligands(unique_smiles, tmp_path, n_proc=n_proc)
         
-        # docking tasks
-        if target == 'gsk3b_jnk3':
-            docking_tasks = [
-                # Task 1: GSK3B
-                {
-                    'smiles_to_pdbqt': smiles_to_pdbqt,
-                    'receptor_path': f"{DOCKING_PATH_PREFIX}/6Y9S.pdbqt",
-                    'task_id': 'gsk3b',
-                    'center': (24.503, 9.183, 9.226),
-                    'tmp_path': tmp_path
-                },
-                # Task 2: JNK3
-                {
-                    'smiles_to_pdbqt': smiles_to_pdbqt,
-                    'receptor_path': f"{DOCKING_PATH_PREFIX}/4WHZ.pdbqt",
-                    'task_id': 'jnk3',
-                    'center': (4.327, 101.902, 141.338),
-                    'tmp_path': tmp_path
-                }
-            ]
-        elif target == 'dhodh_rorgt':
-            docking_tasks = [
-                # Task 1: DHODH
-                {
-                    'smiles_to_pdbqt': smiles_to_pdbqt,
-                    'receptor_path': f"{DOCKING_PATH_PREFIX}/6QU7.pdbqt",
-                    'task_id': 'dhodh',
-                    'center': (33.359, -11.558, -22.820),
-                    'tmp_path': tmp_path
-                },
-                # Task 2: RORGT
-                {
-                    'smiles_to_pdbqt': smiles_to_pdbqt,
-                    'receptor_path': f"{DOCKING_PATH_PREFIX}/5NTP.pdbqt",
-                    'task_id': 'rorgt',
-                    'center': (18.003, 11.762, 20.391),
-                    'tmp_path': tmp_path
-                }
-            ]
-        elif target == 'egfr_met':
-            docking_tasks = [
-                # Task 1: EGFR
-                {
-                    'smiles_to_pdbqt': smiles_to_pdbqt,
-                    'receptor_path': f"{DOCKING_PATH_PREFIX}/1M17.pdbqt",
-                    'task_id': 'egfr',
-                    'center': (22.014,0.253,52.79),
-                    'tmp_path': tmp_path
-                },
-                # Task 2: MET
-                {
-                    'smiles_to_pdbqt': smiles_to_pdbqt,
-                    'receptor_path': f"{DOCKING_PATH_PREFIX}/4MXC.pdbqt",
-                    'task_id': 'met',
-                    'center': (-9.384,17.423,-28.886),
-                    'tmp_path': tmp_path
-                }
-            ]
-        elif target == 'pik3ca_mtor':
-            docking_tasks = [
-                # Task 1: PIK3CA
-                {
-                    'smiles_to_pdbqt': smiles_to_pdbqt,
-                    'receptor_path': f"{DOCKING_PATH_PREFIX}/8V8I.pdbqt",
-                    'task_id': 'pik3ca',
-                    'center': (-19.947,-23.175,10.569),
-                    'tmp_path': tmp_path
-                },
-                # Task 2: MTOR
-                {
-                    'smiles_to_pdbqt': smiles_to_pdbqt,
-                    'receptor_path': f"{DOCKING_PATH_PREFIX}/3FAP.pdbqt",
-                    'task_id': 'mtor',
-                    'center': (-8.630,26.528,36.52),
-                    'tmp_path': tmp_path
-                }
-            ]
-        else:
-            raise ValueError(f"Invalid target: {target}")
+        docking_tasks = get_docking_tasks(target, smiles_to_pdbqt, tmp_path)
         
         results = [None, None]
         
@@ -336,7 +269,7 @@ def batch_dock(child_nodes_mol: Dict[Node, Tuple[str]], target: str, n_proc: int
                         results[task_idx] = {smiles: 0.0 for smiles in smiles_to_pdbqt}
         
         # Map scores back to nodes
-        ds1_scores = {node: results[0][smiles] for node, smiles in node_to_smiles.items()}
-        ds2_scores = {node: results[1][smiles] for node, smiles in node_to_smiles.items()}
+        ds1_scores = {node: results[0].get(smiles, 0.0) for node, smiles in node_to_smiles.items()}
+        ds2_scores = {node: results[1].get(smiles, 0.0) for node, smiles in node_to_smiles.items()}
         
         return ds1_scores, ds2_scores

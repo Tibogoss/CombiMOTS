@@ -193,6 +193,10 @@ def save_generated_molecules(
 
     # Save data
     save_path.parent.mkdir(parents=True, exist_ok=True)
+    if len(nodes) == 0:
+        pd.DataFrame(columns=columns + ['pareto_rank']).to_csv(save_path, index=False)
+        return
+
     if scalarize:
         data = pd.DataFrame(
             data=[

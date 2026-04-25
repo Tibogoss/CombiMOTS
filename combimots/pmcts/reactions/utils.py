@@ -41,4 +41,18 @@ def load_and_set_allowed_reaction_building_blocks(
     # Set allowed building blocks for each reaction
     for reaction in reactions:
         for reactant_index, reactant in enumerate(reaction.reactants):
-            reactant.allowed_building_blocks = reaction_to_reactant_to_building_blocks[reaction.id][reactant_index]
+            try:
+                allowed_building_blocks = reaction_to_reactant_to_building_blocks[reaction.id][reactant_index]
+            except KeyError as error:
+                raise ValueError(
+                    f"Reaction mapping is missing reaction {reaction.id} position {reactant_index}. "
+                    "Run the search-space mapping/filtering preprocessing steps again."
+                ) from error
+
+            if len(allowed_building_blocks) == 0:
+                raise ValueError(
+                    f"Reaction mapping has an empty building-block set for reaction {reaction.id} "
+                    f"position {reactant_index}. Run the search-space mapping/filtering preprocessing steps again."
+                )
+
+            reactant.allowed_building_blocks = allowed_building_blocks
