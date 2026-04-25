@@ -29,16 +29,15 @@ To accelerate molecular docking simulation, we utilize **QuickVina-GPU-2.1** fro
 # Install Environment
 Implementation was originally conducted with Python3.10 and CUDA11.7 on a single NVIDIA RTX A6000 GPU or CPU.
 ```sh
-conda create -n combimots
+conda create -n combimots python=3.10 -y
 conda activate combimots
 
 conda install -c bioconda mgltools -y
-conda install python=3.10 -y
 conda install -c nvidia/label/cuda-11.7.0 cuda-nvcc -y
 conda install -c nvidia cuda-opencl -y
 conda install -c conda-forge ocl-icd-system -y
 
-conda install -c conda-forge boost=1.77.0 boost-cpp=1.77.0 pdbfixer openbabel openmm -y
+conda install -c conda-forge boost=1.77.0 boost-cpp=1.77.0 pdbfixer openbabel openmm rdkit 'zlib>=1.2.13' gxx_linux-64 -y
 
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
@@ -52,7 +51,7 @@ pip install -e combimots/. # setup combimots in-line command
 
 ## Fresh Clone Docking Setup
 
-Docking needs QuickVina-GPU-2.1 cloned and compiled separately. The helper below clones it into the expected ignored directory, writes `.env`, and patches QuickVina's `WORK_DIR` in its local Makefile:
+Docking needs QuickVina-GPU-2.1 cloned and compiled separately. The helper below clones it into the expected ignored directory, writes `.env`, and installs the CombiMOTS QuickVina Makefile template:
 
 ```sh
 python setup_docking.py

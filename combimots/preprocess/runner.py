@@ -22,11 +22,16 @@ STEP_ORDER = (
     "merge-fragments",
     "similar-blocks",
     "filter-elements",
-    "chemprop-predict",
+    "precompute-chemprop",
     "precompute-docking",
     "map-search-space",
     "filter-reactions",
 )
+
+STEP_ALIASES = {
+    "chemprop-predict": "precompute-chemprop",
+}
+STEP_CHOICES = (*STEP_ORDER, *STEP_ALIASES)
 
 
 @dataclass(frozen=True)
@@ -239,7 +244,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             report_path=_step_report_path(report_dir, "filter-elements"),
         ),
         StepPlan(
-            name="chemprop-predict",
+            name="precompute-chemprop",
             description="Predict target activities for candidate building blocks",
             commands=(
                 (
@@ -254,10 +259,10 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
                 test_path=similar_blocks,
                 preds_path=precompute_blocks,
                 checkpoint_dir=model_dir,
-                report_path=_step_report_path(report_dir, "chemprop-predict"),
+                report_path=_step_report_path(report_dir, "precompute-chemprop"),
                 command=args.chemprop_command,
             ),
-            report_path=_step_report_path(report_dir, "chemprop-predict"),
+            report_path=_step_report_path(report_dir, "precompute-chemprop"),
         ),
         StepPlan(
             name="precompute-docking",
@@ -417,9 +422,9 @@ def main() -> None:
     parser.add_argument("--report-dir", type=Path, default=None, help="Defaults to models/{model_name}/preprocess_reports")
     parser.add_argument("--run-report-path", type=Path, default=None, help="Defaults to {report_dir}/run-summary.json")
     parser.add_argument("--python-executable", default=sys.executable)
-    parser.add_argument("--step", choices=STEP_ORDER, default=None, help="Run exactly one step")
-    parser.add_argument("--from-step", choices=STEP_ORDER, default=None)
-    parser.add_argument("--to-step", choices=STEP_ORDER, default=None)
+    parser.add_argument("--step", choices=STEP_CHOICES, default=None, help="Run exactly one step")
+    parser.add_argument("--from-step", choices=STEP_CHOICES, default=None)
+    parser.add_argument("--to-step", choices=STEP_CHOICES, default=None)
     parser.add_argument("--dry-run", action="store_true", help="Print planned commands without executing")
     parser.add_argument("--resume", action="store_true", help="Skip steps whose outputs already exist")
     parser.add_argument("--force", action="store_true", help="Run selected steps even if --resume outputs exist")
@@ -490,6 +495,9 @@ def _run_metadata(args: argparse.Namespace, plans: list[StepPlan]) -> dict[str, 
 
 
 def _select_step_names(step: str | None, from_step: str | None, to_step: str | None) -> set[str]:
+    step = _canonical_step_name(step)
+    from_step = _canonical_step_name(from_step)
+    to_step = _canonical_step_name(to_step)
     if step and (from_step or to_step):
         raise ValueError("Use either --step or --from-step/--to-step, not both")
     if step:
@@ -499,6 +507,10 @@ def _select_step_names(step: str | None, from_step: str | None, to_step: str | N
     if start > end:
         raise ValueError("--from-step must be before --to-step")
     return set(STEP_ORDER[start:end + 1])
+
+
+def _canonical_step_name(step_name: str | None) -> str | None:
+    return STEP_ALIASES.get(step_name, step_name) if step_name is not None else None
 
 
 def _append_if(command: tuple[str, ...], condition: bool, *extra: str) -> tuple[str, ...]:

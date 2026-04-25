@@ -8,11 +8,6 @@ import torch
 
 from pmcts.constants import MODEL_TYPES
 from pmcts.generate.node import Node
-from pmcts.models import (
-    chemprop_load,
-    chemprop_load_scaler,
-    chemprop_predict_on_molecule_ensemble,
-)
 
 def create_model_scoring_fn(
         model_path: Path,  # To chemprop model
@@ -36,6 +31,12 @@ def create_model_scoring_fn(
         model_paths = [model_path]
 
     if model_type == 'chemprop':
+        from pmcts.models import (
+            chemprop_load,
+            chemprop_load_scaler,
+            chemprop_predict_on_molecule_ensemble,
+        )
+
         # Ensure reproducibility
         torch.manual_seed(0)
         torch.use_deterministic_algorithms(True)

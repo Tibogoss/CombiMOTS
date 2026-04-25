@@ -42,7 +42,6 @@ setup(
         'paretoset==1.2.4',
         'pytdc',
         'torch',
-        'rdkit',
         'scikit-learn',
         'scipy',
         'tqdm',

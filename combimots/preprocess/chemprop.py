@@ -56,7 +56,7 @@ def run_chemprop_predict(
         )
 
     result = StepResult(
-        step="chemprop-predict",
+        step="precompute-chemprop",
         status="success",
         inputs=[str(test_path), str(checkpoint_dir)],
         outputs=[str(preds_path)],

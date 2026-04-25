@@ -2,10 +2,10 @@
 # Override paths at invocation if needed, for example:
 #   make source CONDA_ENV=$$CONDA_PREFIX OPENCL_LIB_PATH=/usr/local/cuda
 WORK_DIR=$(CURDIR)
-CONDA_ENV?=$(CONDA_PREFIX)
+CONDA_ENV?=$(shell printf '%s' "$$CONDA_PREFIX")
 BOOST_LIB_PATH?=$(CONDA_ENV)
 OPENCL_LIB_PATH?=$(CONDA_ENV)
-CXX=g++
+CXX=$(shell command -v g++ 2>/dev/null || command -v x86_64-conda-linux-gnu-g++ 2>/dev/null || command -v c++ 2>/dev/null || printf 'g++')
 CXXFLAGS?=-O3
 
 # Version and platform settings
