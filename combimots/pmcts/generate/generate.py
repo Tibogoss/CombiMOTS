@@ -45,7 +45,7 @@ def generate(
         model_path: Path,
         save_dir: Path,
         building_blocks_path: Path,
-        #reaction_to_building_blocks_path: Path | None = REACTION_TO_BUILDING_BLOCKS_PATH,
+        reaction_to_building_blocks_path: Path | None = None,
         building_blocks_id_column: str = "reagent_id",
         target_activities: List[str] = ["gsk3b_activity", "jnk3_activity"],
         building_blocks_smiles_column: str = "smiles",
@@ -161,7 +161,13 @@ def generate(
     )
 
     # Optionally, set allowed building blocks for each reaction
-    reaction_to_building_blocks_path = get_target_pair_mapping_path(target_pair)
+    if reaction_to_building_blocks_path is None:
+        reaction_to_building_blocks_path = get_target_pair_mapping_path(target_pair)
+    else:
+        reaction_to_building_blocks_path = Path(reaction_to_building_blocks_path)
+        if not reaction_to_building_blocks_path.exists():
+            raise FileNotFoundError(f"Reaction mapping does not exist: {reaction_to_building_blocks_path}")
+
     if reaction_to_building_blocks_path.exists():
         print('Loading and setting allowed building blocks for each reaction...')
         load_and_set_allowed_reaction_building_blocks(

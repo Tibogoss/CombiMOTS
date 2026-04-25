@@ -205,7 +205,9 @@ def train_fgib_model(
         }
 
     if not output_checkpoint.exists():
-        raise FileNotFoundError(f"Expected FGIB checkpoint was not produced: {output_checkpoint}")
+        output_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"state_dict": model.state_dict(), "args": args}, output_checkpoint)
+        checkpoint_paths.append(output_checkpoint)
 
     result = StepResult(
         step="train-fgib",

@@ -21,13 +21,31 @@ def filter_reaction_mapping(
 
     from preprocess.search_space import reduce_mapping_to_csv_blocks
 
-    reduce_mapping_to_csv_blocks(
+    report = reduce_mapping_to_csv_blocks(
         input_csv=input,
         real_path=real_path,
         save_path=save_path,
         smiles_column=smiles_column,
-        report_path=report_path,
+        report_path=None,
     )
+    if report_path is not None:
+        from preprocess.reports import StepResult, write_step_report
+
+        fallback_count = len(report.get("fallback_positions", []))
+        warnings = []
+        if fallback_count:
+            warnings.append(f"{fallback_count} reaction positions fell back to original REAL blocks.")
+        write_step_report(
+            StepResult(
+                step="map-search-space",
+                status="success",
+                inputs=[str(input), str(real_path)],
+                outputs=[str(save_path)],
+                metrics=report,
+                warnings=warnings,
+            ),
+            report_path,
+        )
 
 
 def parse_args() -> argparse.Namespace:

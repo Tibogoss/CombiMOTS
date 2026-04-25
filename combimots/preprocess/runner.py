@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from pmcts.config import SUPPORTED_TARGET_PAIRS
 from preprocess.reports import RunResult, StepResult, write_run_report, write_step_report
 
@@ -42,6 +45,7 @@ class StepPlan:
     description: str
     action: Callable[[], object] | None = None
     report_path: Path | None = None
+    resume_outputs: tuple[Path, ...] | None = None
 
 
 def build_plan(args: argparse.Namespace) -> list[StepPlan]:
@@ -79,8 +83,24 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             name="fgib-data",
             description="Convert input CSV to per-target FGIB .pt datasets",
             commands=(
-                (python, str(repo_root / "utils_fgib" / "data.py"), "--csv_path", str(input_csv), "--target", target1, "--save_path", str(fgib_data_1)),
-                (python, str(repo_root / "utils_fgib" / "data.py"), "--csv_path", str(input_csv), "--target", target2, "--save_path", str(fgib_data_2)),
+                (
+                    python,
+                    str(repo_root / "utils_fgib" / "data.py"),
+                    "--csv_path", str(input_csv),
+                    "--target", target1,
+                    "--test_size", str(args.fgib_test_size),
+                    "--random_state", str(args.fgib_random_state),
+                    "--save_path", str(fgib_data_1),
+                ),
+                (
+                    python,
+                    str(repo_root / "utils_fgib" / "data.py"),
+                    "--csv_path", str(input_csv),
+                    "--target", target2,
+                    "--test_size", str(args.fgib_test_size),
+                    "--random_state", str(args.fgib_random_state),
+                    "--save_path", str(fgib_data_2),
+                ),
             ),
             outputs=(fgib_data_1, fgib_data_2),
             action=lambda: _run_fgib_data(
@@ -242,6 +262,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
                 report_path=_step_report_path(report_dir, "filter-elements"),
             ),
             report_path=_step_report_path(report_dir, "filter-elements"),
+            resume_outputs=(similar_blocks, _step_report_path(report_dir, "filter-elements")),
         ),
         StepPlan(
             name="precompute-chemprop",
@@ -337,6 +358,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
                 report_path=_step_report_path(report_dir, "filter-reactions"),
             ),
             report_path=_step_report_path(report_dir, "filter-reactions"),
+            resume_outputs=(target_mapping, _step_report_path(report_dir, "filter-reactions")),
         ),
     ]
 
@@ -358,7 +380,8 @@ def run_plan(
     produced_this_run: set[Path] = set()
     step_results: list[StepResult] = []
     for plan in plans:
-        outputs_exist = plan.outputs and all(output.exists() for output in plan.outputs)
+        resume_outputs = plan.resume_outputs or plan.outputs
+        outputs_exist = bool(resume_outputs) and all(output.exists() for output in resume_outputs)
         output_was_produced_this_run = any(output in produced_this_run for output in plan.outputs)
         status = "skip" if resume and outputs_exist and not force and not output_was_produced_this_run else "run"
         print(f"\n[{status}] {plan.name}: {plan.description}")

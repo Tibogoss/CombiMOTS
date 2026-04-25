@@ -22,13 +22,34 @@ def filter_real_reactions_to_building_blocks(
     from pmcts.reactions import REACTIONS
     from preprocess.search_space import filter_mapping_to_reaction_templates
 
-    filter_mapping_to_reaction_templates(
+    report = filter_mapping_to_reaction_templates(
         reaction_to_building_blocks_path=reaction_to_building_blocks_path,
         save_path=save_path,
         reactions=REACTIONS,
         original_reaction_to_building_blocks_path=original_reaction_to_building_blocks_path or REACTION_TO_BUILDING_BLOCKS_PATH,
-        report_path=report_path,
+        report_path=None,
     )
+    if report_path is not None:
+        from preprocess.reports import StepResult, write_step_report
+
+        fallback_count = len(report.get("fallback_positions", []))
+        warnings = []
+        if fallback_count:
+            warnings.append(f"{fallback_count} reaction positions fell back to original/template-compatible blocks.")
+        write_step_report(
+            StepResult(
+                step="filter-reactions",
+                status="success",
+                inputs=[
+                    str(reaction_to_building_blocks_path),
+                    str(original_reaction_to_building_blocks_path or REACTION_TO_BUILDING_BLOCKS_PATH),
+                ],
+                outputs=[str(save_path)],
+                metrics=report,
+                warnings=warnings,
+            ),
+            report_path,
+        )
 
 
 def parse_args() -> argparse.Namespace:

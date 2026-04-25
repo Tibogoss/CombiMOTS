@@ -27,7 +27,14 @@ To accelerate molecular docking simulation, we utilize **QuickVina-GPU-2.1** fro
 
 
 # Install Environment
-Implementation was originally conducted with Python3.10 and CUDA11.7 on a single NVIDIA RTX A6000 GPU or CPU.
+Implementation was originally conducted with Python3.10 and CUDA11.7 on a single NVIDIA RTX A6000 GPU or CPU. For a fresh conda-based machine, use the root setup script:
+
+```sh
+bash setup_fresh_env.sh combimots
+```
+
+The equivalent manual setup is:
+
 ```sh
 conda create -n combimots python=3.10 -y
 conda activate combimots
@@ -37,7 +44,7 @@ conda install -c nvidia/label/cuda-11.7.0 cuda-nvcc -y
 conda install -c nvidia cuda-opencl -y
 conda install -c conda-forge ocl-icd-system -y
 
-conda install -c conda-forge boost=1.77.0 boost-cpp=1.77.0 pdbfixer openbabel openmm rdkit 'zlib>=1.2.13' gxx_linux-64 -y
+conda install -c conda-forge boost-cpp pdbfixer openbabel openmm rdkit 'zlib>=1.2.13' gxx_linux-64 -y
 
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
@@ -69,6 +76,20 @@ To also try compiling QuickVina immediately:
 
 ```sh
 python setup_docking.py --compile-source
+```
+
+Or compile manually from the QuickVina directory after running `setup_docking.py`:
+
+```sh
+cd combimots/pmcts/docking/Vina-GPU-2.1/QuickVina2-GPU-2.1
+make source
+cd -
+```
+
+If OpenCL is outside the conda environment, pass its absolute path without shell variable quotes:
+
+```sh
+make source OPENCL_LIB_PATH=/usr/local/cuda
 ```
 
 After installing CombiMOTS, validate without running docking:

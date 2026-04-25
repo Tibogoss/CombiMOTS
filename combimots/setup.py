@@ -1,5 +1,8 @@
 from pathlib import Path
+
 from setuptools import find_packages, setup
+
+ROOT = Path(__file__).resolve().parents[1]
 
 # Load version number
 __version__ = ''
@@ -9,7 +12,7 @@ with open(version_file) as fd:
     exec(fd.read())
 
 # Load README
-with open('../README.md', encoding='utf-8') as f:
+with open(ROOT / 'README.md', encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
@@ -23,7 +26,7 @@ setup(
     download_url=f'',
     license='MIT',
     packages=find_packages(),
-    package_data={'pmcts': ['py.typed', 'resources/**/*', 'docking/*.pdbqt']},
+    package_data={'pmcts': ['py.typed', 'resources/**/*', 'docking/*.pdbqt', 'docking/Makefile']},
     entry_points={
         'console_scripts': [
             'pmcts=pmcts.generate.generate:generate_command_line',

@@ -44,7 +44,7 @@ def setup_quickvina(
 
     if patch_makefile:
         _install_makefile_template(
-            template_path=docking_path / "Makefile",
+            template_path=_makefile_template_path(docking_path),
             makefile_path=quickvina_method / "Makefile",
         )
         _patch_makefile(
@@ -117,6 +117,13 @@ def _install_makefile_template(template_path: Path, makefile_path: Path) -> None
     print(f"Installed CombiMOTS QuickVina Makefile template: {makefile_path}")
 
 
+def _makefile_template_path(docking_path: Path) -> Path:
+    source_tree_template = docking_path / "Makefile"
+    if source_tree_template.exists():
+        return source_tree_template
+    return Path(__file__).resolve().with_name("Makefile")
+
+
 def _patch_makefile(
     makefile_path: Path,
     boost_lib_path: Path | None,
@@ -176,7 +183,16 @@ def _print_summary(docking_path: Path, env_path: Path, quickvina_method: Path) -
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    cwd = Path.cwd().resolve()
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / "README.md").exists() and (candidate / "combimots" / "pmcts" / "docking").exists():
+            return candidate
+
+    source_tree_root = Path(__file__).resolve().parents[3]
+    if (source_tree_root / "README.md").exists() and (source_tree_root / "combimots" / "pmcts" / "docking").exists():
+        return source_tree_root
+
+    return cwd
 
 
 def main() -> None:
