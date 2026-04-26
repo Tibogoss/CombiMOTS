@@ -1,5 +1,3 @@
-"""Compatibility wrapper for reducing REAL Space reaction mappings."""
-
 from __future__ import annotations
 
 import argparse
@@ -7,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "combimots"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def filter_reaction_mapping(
@@ -17,8 +15,6 @@ def filter_reaction_mapping(
     smiles_column: str = "smiles",
     report_path: Path | None = None,
 ) -> None:
-    """Filter the REAL SMILES-set mapping while preserving every reaction position."""
-
     from preprocess.search_space import reduce_mapping_to_csv_blocks
 
     report = reduce_mapping_to_csv_blocks(

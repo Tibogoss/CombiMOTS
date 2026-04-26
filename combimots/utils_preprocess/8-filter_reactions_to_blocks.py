@@ -1,5 +1,3 @@
-"""Compatibility wrapper for filtering REAL building blocks by templates."""
-
 from __future__ import annotations
 
 import argparse
@@ -7,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "combimots"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def filter_real_reactions_to_building_blocks(
@@ -16,8 +14,6 @@ def filter_real_reactions_to_building_blocks(
     original_reaction_to_building_blocks_path: Path | None = None,
     report_path: Path | None = None,
 ) -> None:
-    """Filter a SMILES-set reaction mapping by reaction template compatibility."""
-
     from pmcts.constants import REACTION_TO_BUILDING_BLOCKS_PATH
     from pmcts.reactions import REACTIONS
     from preprocess.search_space import filter_mapping_to_reaction_templates

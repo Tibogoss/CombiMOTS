@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from rdkit import Chem
 from tqdm import tqdm
 
 from pmcts.reactions import Reaction
+from preprocess.filters import canonicalize_smiles_value, filter_quickvina_compatible_smiles
 
 
 ReactionMapping = dict[int, dict[int, set[str]]]
@@ -24,8 +24,7 @@ def canonicalize_smiles(smiles: str, cache: dict[str, str | None] | None = None)
     if cache is not None and smiles in cache:
         return cache[smiles]
 
-    mol = Chem.MolFromSmiles(smiles)
-    canonical = Chem.MolToSmiles(mol, canonical=True) if mol is not None else None
+    canonical, _ = canonicalize_smiles_value(smiles)
     if cache is not None:
         cache[smiles] = canonical
     return canonical
@@ -104,27 +103,35 @@ def reduce_mapping_to_csv_blocks(
 
     filtered_mapping: ReactionMapping = {}
     fallback_positions: list[dict[str, Any]] = []
+    fallback_cleanup_metrics = _empty_cleanup_totals()
     matched_block_total = 0
 
     print("Filtering building blocks by CSV membership...")
     for reaction_id, positions in tqdm(original_mapping.items()):
         filtered_mapping[reaction_id] = {}
         for position, building_blocks in positions.items():
-            filtered_blocks = {
-                bb_smiles
-                for bb_smiles in building_blocks
-                if canonicalize_smiles(bb_smiles, canonical_cache) in custom_smiles
-            }
+            filtered_blocks = set()
+            for bb_smiles in building_blocks:
+                canonical = canonicalize_smiles(bb_smiles, canonical_cache)
+                if canonical in custom_smiles:
+                    filtered_blocks.add(canonical)
             matched_block_total += len(filtered_blocks)
 
             if filtered_blocks:
                 filtered_mapping[reaction_id][position] = filtered_blocks
             else:
-                filtered_mapping[reaction_id][position] = set(building_blocks)
+                fallback_blocks, cleanup_metrics = filter_quickvina_compatible_smiles(building_blocks)
+                _add_cleanup_totals(fallback_cleanup_metrics, cleanup_metrics)
+                if not fallback_blocks:
+                    raise ValueError(
+                        f"Reaction {reaction_id} position {position} has no compatible fallback building blocks"
+                    )
+                filtered_mapping[reaction_id][position] = fallback_blocks
                 fallback_positions.append({
                     "reaction_id": reaction_id,
                     "position": position,
-                    "kept_original_count": len(building_blocks),
+                    "original_count": len(building_blocks),
+                    "kept_compatible_count": len(fallback_blocks),
                     "reason": "no_csv_match",
                 })
 
@@ -142,6 +149,7 @@ def reduce_mapping_to_csv_blocks(
         "csv_matched_position_blocks": matched_block_total,
         "final_position_blocks_after_fallback": _position_block_total(filtered_mapping),
         "fallback_positions": fallback_positions,
+        "fallback_cleanup": fallback_cleanup_metrics,
         "original_theoretical_products": theoretical_product_count(original_mapping),
         "final_theoretical_products": theoretical_product_count(filtered_mapping),
     }
@@ -166,6 +174,8 @@ def filter_mapping_to_reaction_templates(
 
     filtered_mapping: ReactionMapping = {}
     fallback_positions: list[dict[str, Any]] = []
+    input_cleanup_metrics = _empty_cleanup_totals()
+    fallback_cleanup_metrics = _empty_cleanup_totals()
 
     print("Filtering building blocks by reaction templates...")
     for reaction_id, reaction in tqdm(reaction_by_id.items()):
@@ -180,13 +190,22 @@ def filter_mapping_to_reaction_templates(
             if reactant_index not in original_positions:
                 raise ValueError(f"Original mapping is missing reaction {reaction_id} position {reactant_index}")
 
-            source_blocks = set(source_positions.get(reactant_index, set()))
+            source_blocks, cleanup_metrics = filter_quickvina_compatible_smiles(
+                source_positions.get(reactant_index, set())
+            )
+            _add_cleanup_totals(input_cleanup_metrics, cleanup_metrics)
             if not source_blocks:
-                source_blocks = set(original_positions[reactant_index])
+                source_blocks, cleanup_metrics = filter_quickvina_compatible_smiles(original_positions[reactant_index])
+                _add_cleanup_totals(fallback_cleanup_metrics, cleanup_metrics)
+                if not source_blocks:
+                    raise ValueError(
+                        f"Reaction {reaction_id} position {reactant_index} has no compatible fallback building blocks"
+                    )
                 fallback_positions.append({
                     "reaction_id": reaction_id,
                     "position": reactant_index,
-                    "kept_original_count": len(source_blocks),
+                    "original_count": len(original_positions[reactant_index]),
+                    "kept_compatible_count": len(source_blocks),
                     "reason": "missing_or_empty_input_position",
                 })
 
@@ -195,18 +214,21 @@ def filter_mapping_to_reaction_templates(
                 filtered_mapping[reaction_id][reactant_index] = template_filtered
                 continue
 
-            fallback_blocks = _filter_template_matches(set(original_positions[reactant_index]), reactant)
+            fallback_source_blocks, cleanup_metrics = filter_quickvina_compatible_smiles(original_positions[reactant_index])
+            _add_cleanup_totals(fallback_cleanup_metrics, cleanup_metrics)
+            fallback_blocks = _filter_template_matches(fallback_source_blocks, reactant)
             if not fallback_blocks:
                 raise ValueError(
                     f"Reaction {reaction_id} position {reactant_index} has no template-compatible "
-                    "building blocks even in the original mapping"
+                    "building blocks after fallback cleanup"
                 )
 
             filtered_mapping[reaction_id][reactant_index] = fallback_blocks
             fallback_positions.append({
                 "reaction_id": reaction_id,
                 "position": reactant_index,
-                "kept_original_count": len(fallback_blocks),
+                "original_count": len(original_positions[reactant_index]),
+                "kept_compatible_count": len(fallback_blocks),
                 "reason": "template_filter_empty",
             })
 
@@ -221,6 +243,8 @@ def filter_mapping_to_reaction_templates(
         "input_position_blocks": _position_block_total(reduced_mapping),
         "final_position_blocks_after_fallback": _position_block_total(filtered_mapping),
         "fallback_positions": fallback_positions,
+        "input_cleanup": input_cleanup_metrics,
+        "fallback_cleanup": fallback_cleanup_metrics,
         "input_theoretical_products": theoretical_product_count(reduced_mapping),
         "final_theoretical_products": theoretical_product_count(filtered_mapping),
     }
@@ -245,6 +269,23 @@ def _filter_template_matches(building_blocks: set[str], reactant: Any) -> set[st
 
 def _position_block_total(mapping: ReactionMapping) -> int:
     return sum(len(blocks) for positions in mapping.values() for blocks in positions.values())
+
+
+def _empty_cleanup_totals() -> dict[str, int]:
+    return {
+        "input_rows": 0,
+        "output_rows": 0,
+        "empty_smiles_rows": 0,
+        "invalid_smiles_rows": 0,
+        "disconnected_smiles_rows": 0,
+        "forbidden_element_rows": 0,
+        "duplicate_canonical_smiles_rows": 0,
+    }
+
+
+def _add_cleanup_totals(totals: dict[str, int], metrics: dict[str, int]) -> None:
+    for key in totals:
+        totals[key] += metrics.get(key, 0)
 
 
 def _print_reduction_report(report: dict[str, Any]) -> None:

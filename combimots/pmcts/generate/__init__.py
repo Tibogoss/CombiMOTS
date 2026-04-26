@@ -1,9 +1,4 @@
-"""Generation package exports.
-
-Keep imports lazy so docking utilities can import ``pmcts.generate.node`` for
-type annotations without importing the full generation CLI and creating a
-docking/generation circular import.
-"""
+"""Generation package exports."""
 
 __all__ = ["Generator", "Node", "create_model_scoring_fn", "generate", "save_generated_molecules"]
 

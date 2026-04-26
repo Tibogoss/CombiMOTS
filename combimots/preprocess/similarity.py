@@ -38,7 +38,7 @@ def filter_similar_molecules(
     custom_path: Path,
     real_path: Path,
     output_path: Path,
-    threshold: float = 0.7,
+    threshold: float = 0.4,
     batch_size: int = 1000,
     smiles_column: str = "smiles",
     report_path: Path | None = None,

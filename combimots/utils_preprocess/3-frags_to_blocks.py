@@ -1,5 +1,3 @@
-"""Compatibility wrapper for fragment cleaning and merging."""
-
 from __future__ import annotations
 
 import argparse
@@ -7,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "combimots"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from preprocess.fragments import clean_fragment_smiles, merge_fragment_files
 
@@ -16,8 +14,6 @@ process_smiles = clean_fragment_smiles
 
 
 def clean_and_concat_smiles(input_files, output_file, report_path=None):
-    """Clean and concatenate SMILES from multiple input files."""
-
     return merge_fragment_files(
         input_files=[Path(input_file) for input_file in input_files],
         output_file=Path(output_file),

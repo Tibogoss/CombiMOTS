@@ -3,11 +3,6 @@ import argparse
 import numpy as np
 
 def filter_and_sample_dual_activity(input_path, output_path, n_samples=1000, random_seed=42):
-    """
-    Filter CSV for molecules with both targets' activities above threshold,
-    then sort by high docking scores with minimal differences between them.
-    """
-    # Read the CSV file
     df = pd.read_csv(input_path)
     
     raw_docking_columns = ['dockingscore1_raw', 'dockingscore2_raw']
@@ -21,7 +16,6 @@ def filter_and_sample_dual_activity(input_path, output_path, n_samples=1000, ran
         df['dockingscore2'] = -df['dockingscore2'] * 20
     print(f"Dataset size after removing missing docking scores: {len(df)}")
     
-    # Filter for molecules with both activities above threshold
     df_filtered = df[
         (df['activity1'] >= 0.5) & 
         (df['activity2'] >= 0.5)
@@ -31,14 +25,12 @@ def filter_and_sample_dual_activity(input_path, output_path, n_samples=1000, ran
     print(f"Original dataset size: {len(df)}")
     print(f"Molecules with both activities >= 0.5: {len(df_filtered)}")
 
-    # Filter for molecules with only one activity above threshold
     t1_filtered = df[df['activity1'] >= 0.5]
     t2_filtered = df[df['activity2'] >= 0.5]
 
     print(f"Molecules with target1 activity >= 0.5: {len(t1_filtered)}")
     print(f"Molecules with target2 activity >= 0.5: {len(t2_filtered)}")
 
-    # Check if any dual actives are found    
     if len(df_filtered) == 0:
         print(f"No molecules found with both activities >= 0.5")
         return None
@@ -56,7 +48,6 @@ def filter_and_sample_dual_activity(input_path, output_path, n_samples=1000, ran
         print("Using entire filtered dataset instead")
         sampled_df = df_filtered.copy()
     else:
-        # Take top n_samples after sorting
         sampled_df = df_filtered.head(n_samples)
     
     sampled_df = sampled_df[['node_id', 'smiles', 'activity1', 'activity2', 'dockingscore1', 'dockingscore2', 
@@ -67,7 +58,6 @@ def filter_and_sample_dual_activity(input_path, output_path, n_samples=1000, ran
     print(f"Sampled dataset size: {len(sampled_df)}")
     print(f"Saved sampled data to: {output_path}")
     
-    # statistics 
     print("\nSampled data statistics:")
     print(f"activity1:")
     print(f"  Mean: {sampled_df['activity1'].mean():.3f}")

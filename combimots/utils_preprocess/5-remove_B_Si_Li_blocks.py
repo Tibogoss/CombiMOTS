@@ -1,5 +1,3 @@
-"""Compatibility wrapper for QuickVina element filtering."""
-
 from __future__ import annotations
 
 import argparse
@@ -7,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "combimots"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from preprocess.filters import filter_for_quickvina_elements, has_forbidden_quickvina_element
 
@@ -16,8 +14,6 @@ has_B_Si_or_Li = has_forbidden_quickvina_element
 
 
 def filter_molecules(input_file, output_file, report_path=None):
-    """Read a CSV, remove rows containing B, Si, or Li atoms, and save it."""
-
     return filter_for_quickvina_elements(
         input_file=Path(input_file),
         output_file=Path(output_file),

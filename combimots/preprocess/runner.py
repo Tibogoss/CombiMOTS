@@ -24,6 +24,7 @@ STEP_ORDER = (
     "fragments",
     "merge-fragments",
     "similar-blocks",
+    "canonicalize-smiles",
     "filter-elements",
     "precompute-chemprop",
     "precompute-docking",
@@ -33,6 +34,7 @@ STEP_ORDER = (
 
 STEP_ALIASES = {
     "chemprop-predict": "precompute-chemprop",
+    "remove-salts": "canonicalize-smiles",
 }
 STEP_CHOICES = (*STEP_ORDER, *STEP_ALIASES)
 
@@ -62,6 +64,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
     models_dir = _resolve_under(repo_root, args.models_dir)
     ckpt_dir = _resolve_under(repo_root, args.ckpt_dir)
     model_dir = models_dir / model_name
+    script_dir = repo_root / "combimots" / "utils_preprocess"
     resources_dir = repo_root / "combimots" / "pmcts" / "resources" / "real"
     report_dir = _resolve_under(repo_root, args.report_dir) if args.report_dir else model_dir / "preprocess_reports"
 
@@ -119,7 +122,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             commands=(
                 (
                     python,
-                    str(repo_root / "1-train_fgib.py"),
+                    str(script_dir / "1-train_fgib.py"),
                     "-g", str(args.gpu_id),
                     "--target", target1,
                     "--epochs", str(args.fgib_epochs),
@@ -131,7 +134,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
                 ),
                 (
                     python,
-                    str(repo_root / "1-train_fgib.py"),
+                    str(script_dir / "1-train_fgib.py"),
                     "-g", str(args.gpu_id),
                     "--target", target2,
                     "--epochs", str(args.fgib_epochs),
@@ -162,7 +165,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             commands=(
                 (
                     python,
-                    str(repo_root / "2-get_frags.py"),
+                    str(script_dir / "2-get_frags.py"),
                     "-g", str(args.gpu_id),
                     "-t", target1,
                     "-m", str(fgib_ckpt_1),
@@ -173,7 +176,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
                 ),
                 (
                     python,
-                    str(repo_root / "2-get_frags.py"),
+                    str(script_dir / "2-get_frags.py"),
                     "-g", str(args.gpu_id),
                     "-t", target2,
                     "-m", str(fgib_ckpt_2),
@@ -200,7 +203,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             commands=(
                 (
                     python,
-                    str(repo_root / "3-frags_to_blocks.py"),
+                    str(script_dir / "3-frags_to_blocks.py"),
                     str(fragments_1),
                     str(fragments_2),
                     str(fgib_frags),
@@ -222,7 +225,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             commands=(
                 (
                     python,
-                    str(repo_root / "4-get_similar_blocks.py"),
+                    str(script_dir / "4-get_similar_blocks.py"),
                     "--custom_path", str(fgib_frags),
                     "--real_path", str(resources_dir / "building_blocks.csv"),
                     "--output_path", str(similar_blocks),
@@ -243,12 +246,35 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             report_path=_step_report_path(report_dir, "similar-blocks"),
         ),
         StepPlan(
+            name="canonicalize-smiles",
+            description="Canonicalize candidate blocks and remove salts",
+            commands=(
+                (
+                    args.chemfunc_command,
+                    "canonicalize_smiles",
+                    "--data_path", str(similar_blocks),
+                    "--save_path", str(similar_blocks),
+                    "--remove_salts",
+                    "--delete_disconnected_mols",
+                ),
+            ),
+            outputs=(similar_blocks,),
+            action=lambda: _run_canonicalize_smiles(
+                input_file=similar_blocks,
+                output_file=similar_blocks,
+                report_path=_step_report_path(report_dir, "canonicalize-smiles"),
+                command=args.chemfunc_command,
+            ),
+            report_path=_step_report_path(report_dir, "canonicalize-smiles"),
+            resume_outputs=(similar_blocks, _step_report_path(report_dir, "canonicalize-smiles")),
+        ),
+        StepPlan(
             name="filter-elements",
             description="Remove B/Si/Li blocks for QuickVina compatibility",
             commands=(
                 (
                     python,
-                    str(repo_root / "5-remove_B_Si_Li_blocks.py"),
+                    str(script_dir / "5-remove_B_Si_Li_blocks.py"),
                     str(similar_blocks),
                     str(similar_blocks),
                     "--report-path",
@@ -292,7 +318,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
                 _append_if(
                     (
                         python,
-                        str(repo_root / "6-precompute_docking_scores.py"),
+                        str(script_dir / "6-precompute_docking_scores.py"),
                         str(precompute_blocks),
                         str(final_blocks),
                         "--target_pair", args.target_pair,
@@ -319,7 +345,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             commands=(
                 (
                     python,
-                    str(repo_root / "7-map_bbs_to_search_space.py"),
+                    str(script_dir / "7-map_bbs_to_search_space.py"),
                     "--input", str(final_blocks),
                     "--real_path", str(resources_dir / "reaction_to_building_blocks.pkl"),
                     "--save_path", str(target_mapping),
@@ -343,7 +369,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
             commands=(
                 (
                     python,
-                    str(repo_root / "8-filter_reactions_to_blocks.py"),
+                    str(script_dir / "8-filter_reactions_to_blocks.py"),
                     "--reaction_to_building_blocks_path", str(target_mapping),
                     "--save_path", str(target_mapping),
                     "--original_reaction_to_building_blocks_path", str(resources_dir / "reaction_to_building_blocks.pkl"),
@@ -460,6 +486,7 @@ def main() -> None:
     parser.add_argument("--vocab-size", type=int, default=300)
     parser.add_argument("--similarity-threshold", type=float, default=0.4)
     parser.add_argument("--similarity-batch-size", type=int, default=2500)
+    parser.add_argument("--chemfunc-command", default="chemfunc")
     parser.add_argument("--chemprop-command", default="chemprop_predict")
     parser.add_argument("--sequential-docking", action="store_true")
     args = parser.parse_args()
@@ -541,7 +568,15 @@ def _append_if(command: tuple[str, ...], condition: bool, *extra: str) -> tuple[
 
 
 def _step_report_path(report_dir: Path, step_name: str) -> Path:
-    return report_dir / f"{step_name}.json"
+    return report_dir / f"{_step_report_stem(step_name)}.json"
+
+
+def _step_report_stem(step_name: str) -> str:
+    step_name = _canonical_step_name(step_name) or step_name
+    for index, base_name in enumerate(STEP_ORDER):
+        if step_name == base_name or step_name.startswith(f"{base_name}-"):
+            return f"{index:02d}-{step_name}"
+    return step_name
 
 
 def _coerce_step_result(plan: StepPlan, action_result: object) -> StepResult:
@@ -714,6 +749,45 @@ def _run_filter_elements(input_file: Path, output_file: Path, report_path: Path)
     from preprocess.filters import filter_for_quickvina_elements
 
     return filter_for_quickvina_elements(input_file=input_file, output_file=output_file, report_path=report_path)
+
+
+def _run_canonicalize_smiles(input_file: Path, output_file: Path, report_path: Path, command: str) -> StepResult:
+    import pandas as pd
+    from preprocess.filters import clean_building_block_dataframe
+
+    input_rows = len(pd.read_csv(input_file)) if input_file.exists() else 0
+    subprocess.run(
+        [
+            command,
+            "canonicalize_smiles",
+            "--data_path", str(input_file),
+            "--save_path", str(output_file),
+            "--remove_salts",
+            "--delete_disconnected_mols",
+        ],
+        check=True,
+    )
+    output_df = pd.read_csv(output_file) if output_file.exists() else pd.DataFrame(columns=["smiles"])
+    chemfunc_rows = len(output_df)
+    cleaned_df, cleanup_metrics = clean_building_block_dataframe(output_df)
+    cleaned_df.to_csv(output_file, index=False)
+    result = StepResult(
+        step="canonicalize-smiles",
+        status="success",
+        inputs=[str(input_file)],
+        outputs=[str(output_file)],
+        metrics={
+            "input_rows": input_rows,
+            "chemfunc_output_rows": chemfunc_rows,
+            "output_rows": len(cleaned_df),
+            "removed_rows": input_rows - len(cleaned_df),
+            "post_chemfunc_removed_rows": chemfunc_rows - len(cleaned_df),
+            "command": command,
+            "cleanup": cleanup_metrics,
+        },
+    )
+    write_step_report(result, report_path)
+    return result
 
 
 def _run_chemprop_predict(

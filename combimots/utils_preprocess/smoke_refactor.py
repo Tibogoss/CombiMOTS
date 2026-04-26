@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Lightweight refactor smoke checks for preprocessing and generation helpers.
-
-This script intentionally avoids real FGIB training, Chemprop inference, OpenBabel,
-and QuickVina docking. It uses tiny temporary fixtures to validate the importable
-preprocessing modules and a minimal generation output edge case.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -19,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_ROOT = REPO_ROOT / "combimots"
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
@@ -90,9 +83,9 @@ def _smoke_filters(work_dir: Path) -> None:
 
     result = filter_for_quickvina_elements(input_csv, output_csv, report_path=report)
     output_df = pd.read_csv(output_csv)
-    _assert(result.metrics["removed_rows"] == 3, "filter-elements should remove B/Si/Li rows")
-    _assert(set(output_df["smiles"]) == {"CCO", "not_a_smiles"}, "filter-elements output mismatch")
-    _assert(result.metrics["invalid_smiles_rows_retained"] == 1, "invalid SMILES retention metric mismatch")
+    _assert(result.metrics["removed_rows"] == 4, "filter-elements should remove invalid and B/Si/Li rows")
+    _assert(set(output_df["smiles"]) == {"CCO"}, "filter-elements output mismatch")
+    _assert(result.metrics["invalid_smiles_rows"] == 1, "invalid SMILES metric mismatch")
 
 
 def _smoke_similarity(work_dir: Path) -> None:
@@ -137,7 +130,7 @@ def _smoke_search_space(work_dir: Path) -> None:
     filter_report = search_dir / "filter-reactions.json"
 
     pd.DataFrame({"smiles": ["CCO"]}).to_csv(blocks_csv, index=False)
-    original_mapping = {1: {0: {"CCO", "CCN"}, 1: {"CCC"}}}
+    original_mapping = {1: {0: {"CCO", "CCN"}, 1: {"CCC", "B(O)O", "not_a_smiles"}}}
     save_reaction_mapping(original_mapping, original_pkl)
 
     reduction = reduce_mapping_to_csv_blocks(blocks_csv, original_pkl, reduced_pkl, report_path=reduction_report)
@@ -145,6 +138,8 @@ def _smoke_search_space(work_dir: Path) -> None:
     _assert(reduced_mapping[1][0] == {"CCO"}, "search-space reduction should keep matching block")
     _assert(reduced_mapping[1][1] == {"CCC"}, "search-space reduction should fallback empty position")
     _assert(len(reduction["fallback_positions"]) == 1, "search-space fallback count mismatch")
+    _assert(reduction["fallback_cleanup"]["forbidden_element_rows"] == 1, "fallback forbidden metric mismatch")
+    _assert(reduction["fallback_cleanup"]["invalid_smiles_rows"] == 1, "fallback invalid metric mismatch")
 
     reaction = Reaction(
         reactants=[QueryMol("[C:1]"), QueryMol("[O:2]")],

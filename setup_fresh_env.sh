@@ -29,7 +29,6 @@ fi
 conda create -n "$ENV_NAME" -c conda-forge "python=$PYTHON_VERSION" pip uv 'setuptools<81' wheel -y
 conda activate "$ENV_NAME"
 
-# Keep binary/system packages in conda. These are intentionally not installed by uv.
 conda install -c nvidia/label/cuda-11.7.0 cuda-nvcc -y
 conda install -c nvidia cuda-opencl -y
 conda install -c conda-forge ocl-icd-system clinfo -y
@@ -51,12 +50,10 @@ fi
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib"
 UV_PYTHON="$CONDA_PREFIX/bin/python"
 
-# Install CUDA/PyG wheels explicitly before the pure-Python layer.
 uv pip install --python "$UV_PYTHON" torch==2.0.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
 uv pip install --python "$UV_PYTHON" torch-scatter torch-sparse torch-cluster -f https://data.pyg.org/whl/torch-2.0.1+cu117.html
 uv pip install --python "$UV_PYTHON" torch-geometric==2.0.4
 
-# Do not use `uv pip sync` yet: it can remove CUDA/PyG wheels unless the lock strategy includes alternate indexes.
 uv pip install --python "$UV_PYTHON" -r requirements.txt
 uv pip install --python "$UV_PYTHON" --no-deps -e combimots/.
 

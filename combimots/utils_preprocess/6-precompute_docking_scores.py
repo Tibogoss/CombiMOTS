@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Compatibility wrapper for QuickVina-GPU docking-score precomputation."""
-
 from __future__ import annotations
 
 import argparse
@@ -8,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "combimots"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pmcts.config import SUPPORTED_TARGET_PAIRS
 from preprocess.docking_scores import batch_dock_csv
