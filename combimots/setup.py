@@ -41,7 +41,7 @@ setup(
         'descriptastorus',
         'matplotlib',
         'numpy',
-        'pandas',
+        'pandas<2',
         'paretoset==1.2.4',
         'scikit-learn',
         'scipy',

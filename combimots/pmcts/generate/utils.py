@@ -133,6 +133,28 @@ def get_pareto_fronts(scores: np.ndarray, k: int = None) -> List[np.ndarray]:
     return fronts
 
 
+def _docking_score_output(node: Node, scalarize: bool) -> dict[str, float]:
+    """Return transformed docking objectives and raw docking energies for CSV output."""
+
+    if scalarize:
+        raw_score_1 = node.save_scores[2]
+        raw_score_2 = node.save_scores[3]
+        objective_score_1 = -raw_score_1 / 20.0
+        objective_score_2 = -raw_score_2 / 20.0
+    else:
+        objective_score_1 = node.P[2]
+        objective_score_2 = node.P[3]
+        raw_score_1 = -objective_score_1 * 20.0
+        raw_score_2 = -objective_score_2 * 20.0
+
+    return {
+        'dockingscore1': objective_score_1,
+        'dockingscore2': objective_score_2,
+        'dockingscore1_raw': raw_score_1,
+        'dockingscore2_raw': raw_score_2,
+    }
+
+
 def save_generated_molecules(
         nodes: list[Node],
         building_block_id_to_smiles: dict[int, str],
@@ -177,13 +199,13 @@ def save_generated_molecules(
 
     # Specify column order for CSV file
     if scalarize:
-        columns = ['smiles', 'node_id', 'num_expansions', 'rollout_num', 'score', 'activity1', 'activity2', 'dockingscore1', 'dockingscore2', 'num_reactions']
+        columns = ['smiles', 'node_id', 'num_expansions', 'rollout_num', 'score', 'activity1', 'activity2', 'dockingscore1', 'dockingscore2', 'dockingscore1_raw', 'dockingscore2_raw', 'num_reactions']
     elif qed_sa:
         columns = ['smiles', 'node_id', 'num_expansions', 'rollout_num', 'activity1', 'activity2', 'qed', 'sa', 'is_pareto_optimal', 'num_reactions']
     elif all_objectives:
-        columns = ['smiles', 'node_id', 'num_expansions', 'rollout_num', 'activity1', 'activity2', 'dockingscore1', 'dockingscore2', 'qed', 'sa', 'is_pareto_optimal', 'num_reactions']
+        columns = ['smiles', 'node_id', 'num_expansions', 'rollout_num', 'activity1', 'activity2', 'dockingscore1', 'dockingscore2', 'dockingscore1_raw', 'dockingscore2_raw', 'qed', 'sa', 'is_pareto_optimal', 'num_reactions']
     else:
-        columns = ['smiles', 'node_id', 'num_expansions', 'rollout_num', 'activity1', 'activity2', 'dockingscore1', 'dockingscore2', 'is_pareto_optimal', 'num_reactions']
+        columns = ['smiles', 'node_id', 'num_expansions', 'rollout_num', 'activity1', 'activity2', 'dockingscore1', 'dockingscore2', 'dockingscore1_raw', 'dockingscore2_raw', 'is_pareto_optimal', 'num_reactions']
 
     for reaction_num in range(1, max_reaction_num + 1):
         columns.append(f'reaction_{reaction_num}_id')
@@ -209,8 +231,7 @@ def save_generated_molecules(
                     'score': node.P[0],
                     'activity1': node.save_scores[0],
                     'activity2': node.save_scores[1],
-                    'dockingscore1': node.save_scores[2],
-                    'dockingscore2': node.save_scores[3],
+                    **_docking_score_output(node, scalarize=True),
                     'num_reactions': construction_dict['num_reactions'],
                     **construction_dict
                 }
@@ -247,8 +268,7 @@ def save_generated_molecules(
                     'rollout_num': node.rollout_num,
                     'activity1': node.P[0],
                     'activity2': node.P[1],
-                    'dockingscore1': node.P[2],
-                    'dockingscore2': node.P[3],
+                    **_docking_score_output(node, scalarize=False),
                     'qed': node.P[4],
                     'sa': node.P[5],
                     'is_pareto_optimal': node.is_pareto_optimal,
@@ -269,8 +289,7 @@ def save_generated_molecules(
                     'rollout_num': node.rollout_num,
                     'activity1': node.P[0],
                     'activity2': node.P[1],
-                    'dockingscore1': node.P[2],
-                    'dockingscore2': node.P[3],
+                    **_docking_score_output(node, scalarize=False),
                     'is_pareto_optimal': node.is_pareto_optimal,
                     **construction_dict
                 }

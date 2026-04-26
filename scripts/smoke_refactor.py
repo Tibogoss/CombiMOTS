@@ -50,6 +50,7 @@ def _run_smokes(work_dir: Path) -> None:
     _smoke_runner_dry_run(work_dir)
     _smoke_generation_setup_helpers(work_dir)
     _smoke_generation_empty_output(work_dir)
+    _smoke_generation_scalarized_output(work_dir)
     _smoke_generation_with_stub_docking(work_dir)
 
 
@@ -219,6 +220,36 @@ def _smoke_generation_empty_output(work_dir: Path) -> None:
     output_df = pd.read_csv(output_csv)
     _assert(output_df.empty, "empty generation output should have no rows")
     _assert("pareto_rank" in output_df.columns, "empty generation output missing pareto_rank")
+    _assert("dockingscore1_raw" in output_df.columns, "empty generation output missing raw docking column")
+
+
+def _smoke_generation_scalarized_output(work_dir: Path) -> None:
+    import numpy as np
+
+    from pmcts.generate.node import Node
+    from pmcts.generate.utils import save_generated_molecules
+
+    output_csv = work_dir / "generation" / "scalarized_molecules.csv"
+    node = Node(
+        explore_weight=1.0,
+        pareto_function="pmcts",
+        scoring_fn=lambda smiles: [0.7, 0.8],
+        node_id=1,
+        molecules=("CO",),
+        construction_log=(),
+        rollout_num=1,
+        scalarize=True,
+    )
+    node.P = np.array([0.4875])
+    node.save_scores = np.array([0.7, 0.8, -4.0, -5.0])
+
+    save_generated_molecules([node], {}, output_csv, scalarize=True)
+    output_df = pd.read_csv(output_csv)
+    row = output_df.iloc[0]
+    _assert(abs(row["dockingscore1"] - 0.2) < 1e-12, "scalarized docking objective 1 mismatch")
+    _assert(abs(row["dockingscore2"] - 0.25) < 1e-12, "scalarized docking objective 2 mismatch")
+    _assert(abs(row["dockingscore1_raw"] + 4.0) < 1e-12, "scalarized raw docking score 1 mismatch")
+    _assert(abs(row["dockingscore2_raw"] + 5.0) < 1e-12, "scalarized raw docking score 2 mismatch")
 
 
 def _smoke_generation_setup_helpers(work_dir: Path) -> None:
@@ -277,6 +308,7 @@ def _smoke_generation_setup_helpers(work_dir: Path) -> None:
 
 def _smoke_generation_with_stub_docking(work_dir: Path) -> None:
     from pmcts.generate.generator import Generator
+    from pmcts.generate.utils import save_generated_molecules
     from pmcts.reactions import QueryMol, Reaction, set_all_building_blocks
 
     generation_dir = work_dir / "generation-run"
@@ -340,6 +372,15 @@ def _smoke_generation_with_stub_docking(work_dir: Path) -> None:
     product_node = next(node for node in nodes if node.molecules[0] == "CO")
     _assert(abs(product_node.P[2] - 0.2) < 1e-12, "generated docking objective 1 mismatch")
     _assert(abs(product_node.P[3] - 0.25) < 1e-12, "generated docking objective 2 mismatch")
+
+    output_csv = generation_dir / "stub_pareto_molecules.csv"
+    save_generated_molecules(nodes, {1: "C", 2: "O"}, output_csv)
+    output_df = pd.read_csv(output_csv)
+    product_row = output_df[output_df["smiles"] == "CO"].iloc[0]
+    _assert(abs(product_row["dockingscore1"] - 0.2) < 1e-12, "saved docking objective 1 mismatch")
+    _assert(abs(product_row["dockingscore2"] - 0.25) < 1e-12, "saved docking objective 2 mismatch")
+    _assert(abs(product_row["dockingscore1_raw"] + 4.0) < 1e-12, "saved raw docking score 1 mismatch")
+    _assert(abs(product_row["dockingscore2_raw"] + 5.0) < 1e-12, "saved raw docking score 2 mismatch")
 
 
 def _assert(condition: bool, message: str) -> None:

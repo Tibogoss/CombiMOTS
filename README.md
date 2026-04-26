@@ -49,6 +49,13 @@ if [ -d /etc/OpenCL/vendors ]; then export OCL_ICD_VENDORS=/etc/OpenCL/vendors; 
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
 ```
 
+QED/SA objectives require PyTDC, which is optional because the default pipeline does not need it and PyTDC can pull Python cheminformatics dependencies that conflict with the conda RDKit stack. Install it only when running `pmcts --qed_sa` or `pmcts --all_objectives`:
+
+```sh
+uv pip install --python "$CONDA_PREFIX/bin/python" pytdc
+python -B -c "from tdc import Oracle; print(Oracle(name='qed')('CCO'))"
+```
+
 ## Docking Setup
 
 Clone/configure QuickVina-GPU, compile it, and validate the docking setup:
@@ -207,6 +214,8 @@ python 8-filter_reactions_to_blocks.py \
 ```
 
 # Generation: Pareto Monte-Carlo Tree Search
+
+Generated CSV files store `dockingscore1` and `dockingscore2` as the transformed maximization objectives used by MCTS (`-raw_docking_score / 20`). Raw QuickVina energies are also saved as `dockingscore1_raw` and `dockingscore2_raw`.
 
 ```sh
 pmcts --model_path models/${model_name} --save_dir generations/${model_name}/ \

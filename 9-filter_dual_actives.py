@@ -10,18 +10,22 @@ def filter_and_sample_dual_activity(input_path, output_path, n_samples=1000, ran
     # Read the CSV file
     df = pd.read_csv(input_path)
     
-    df = df.dropna(subset=['dockingscore1', 'dockingscore2'])
+    raw_docking_columns = ['dockingscore1_raw', 'dockingscore2_raw']
+    if all(column in df.columns for column in raw_docking_columns):
+        df = df.dropna(subset=raw_docking_columns).copy()
+        df['dockingscore1'] = df['dockingscore1_raw']
+        df['dockingscore2'] = df['dockingscore2_raw']
+    else:
+        df = df.dropna(subset=['dockingscore1', 'dockingscore2']).copy()
+        df['dockingscore1'] = -df['dockingscore1'] * 20
+        df['dockingscore2'] = -df['dockingscore2'] * 20
     print(f"Dataset size after removing missing docking scores: {len(df)}")
-    
-    # Restore original docking score scale (*20)
-    df['dockingscore1'] = -df['dockingscore1'] * 20
-    df['dockingscore2'] = -df['dockingscore2'] * 20
     
     # Filter for molecules with both activities above threshold
     df_filtered = df[
         (df['activity1'] >= 0.5) & 
         (df['activity2'] >= 0.5)
-    ]
+    ].copy()
     
     print(f"\nFiltering results:")
     print(f"Original dataset size: {len(df)}")
