@@ -17,7 +17,7 @@ from pmcts.reactions import (
     load_and_set_allowed_reaction_building_blocks,
     set_all_building_blocks
 )
-from pmcts.config import get_target_pair_mapping_path
+from pmcts.config import get_real_resource_path
 from pmcts.generate.generator import Generator
 from pmcts.generate.utils import create_model_scoring_fn, save_generated_molecules
 
@@ -41,11 +41,166 @@ def _clone_reactions(reactions: tuple[Reaction]) -> tuple[Reaction, ...]:
     )
 
 
+def _validate_generation_modes(qed_sa: bool, scalarize: bool, all_objectives: bool) -> None:
+    if sum([bool(qed_sa), bool(scalarize), bool(all_objectives)]) > 1:
+        raise ValueError("Use only one of qed_sa, scalarize, or all_objectives at a time.")
+
+
+def _load_building_block_data(
+        building_blocks_path: Path,
+        building_blocks_id_column: str,
+        building_blocks_smiles_column: str,
+        target_activities: List[str],
+        qed_sa: bool
+) -> pd.DataFrame:
+    print('Loading building blocks...')
+    building_block_data = pd.read_csv(building_blocks_path)
+    print(f'Loaded {len(building_block_data):,} building blocks')
+
+    base_columns = [building_blocks_id_column, building_blocks_smiles_column, *target_activities]
+    if qed_sa:
+        _require_columns(building_block_data, base_columns, "QED/SA generation")
+    else:
+        _require_columns(building_block_data, [*base_columns, "ds_1", "ds_2"], "activity/docking generation")
+
+    if building_block_data[building_blocks_id_column].nunique() != len(building_block_data):
+        raise ValueError('Building block IDs are not unique.')
+
+    return building_block_data
+
+
+def _build_building_block_maps(
+        building_block_data: pd.DataFrame,
+        building_blocks_id_column: str,
+        building_blocks_smiles_column: str
+) -> tuple[dict[str, int], dict[int, str]]:
+    building_block_smiles_to_id = dict(zip(
+        building_block_data[building_blocks_smiles_column],
+        building_block_data[building_blocks_id_column]
+    ))
+    building_block_id_to_smiles = dict(zip(
+        building_block_data[building_blocks_id_column],
+        building_block_data[building_blocks_smiles_column]
+    ))
+    print(f'Found {len(building_block_smiles_to_id):,} unique building blocks')
+
+    return building_block_smiles_to_id, building_block_id_to_smiles
+
+
+def _build_activity_score_cache(
+        building_block_data: pd.DataFrame,
+        building_blocks_smiles_column: str,
+        target_activities: List[str]
+) -> dict[int, dict[str, float]]:
+    return {
+        0: dict(zip(
+            building_block_data[building_blocks_smiles_column],
+            building_block_data[target_activities[0]])),
+        1: dict(zip(
+            building_block_data[building_blocks_smiles_column],
+            building_block_data[target_activities[1]]))
+    }
+
+
+def _build_docking_score_cache(
+        building_block_data: pd.DataFrame,
+        building_blocks_smiles_column: str,
+        qed_sa: bool
+) -> dict[int, dict[str, float]]:
+    if qed_sa:
+        return {0: {}, 1: {}}
+
+    return {
+        0: dict(zip(
+            building_block_data[building_blocks_smiles_column],
+            building_block_data["ds_1"])),
+        1: dict(zip(
+            building_block_data[building_blocks_smiles_column],
+            building_block_data["ds_2"]))
+    }
+
+
+def _build_qed_sa_cache(
+        building_block_data: pd.DataFrame,
+        building_blocks_smiles_column: str,
+        qed_sa: bool,
+        all_objectives: bool
+) -> dict[int, dict[str, float]] | None:
+    if not (qed_sa or all_objectives):
+        return None
+
+    if qed_sa:
+        print('Using QED and SA as objectives - No docking scores will be used')
+    else:
+        print('Using all objectives: activity1, activity2, dockingscore1, dockingscore2, qed, sa')
+
+    if "qed" not in building_block_data.columns or "sa" not in building_block_data.columns:
+        return None
+
+    return {
+        0: dict(zip(
+            building_block_data[building_blocks_smiles_column],
+            building_block_data["qed"])),
+        1: dict(zip(
+            building_block_data[building_blocks_smiles_column],
+            building_block_data["sa"]))
+    }
+
+
+def _resolve_reaction_mapping_path(
+        target_pair: str,
+        reaction_to_building_blocks_path: Path | None
+) -> Path:
+    if reaction_to_building_blocks_path is None:
+        return get_real_resource_path(f"{target_pair}.pkl")
+
+    reaction_to_building_blocks_path = Path(reaction_to_building_blocks_path)
+    if not reaction_to_building_blocks_path.exists():
+        raise FileNotFoundError(f"Reaction mapping does not exist: {reaction_to_building_blocks_path}")
+
+    return reaction_to_building_blocks_path
+
+
+def _prepare_reactions(
+        reactions: tuple[Reaction],
+        building_block_smiles: set[str],
+        target_pair: str,
+        reaction_to_building_blocks_path: Path | None
+) -> tuple[Reaction, ...]:
+    reactions = _clone_reactions(reactions)
+
+    set_all_building_blocks(
+        reactions=reactions,
+        building_blocks=building_block_smiles
+    )
+
+    reaction_to_building_blocks_path = _resolve_reaction_mapping_path(
+        target_pair=target_pair,
+        reaction_to_building_blocks_path=reaction_to_building_blocks_path
+    )
+
+    if reaction_to_building_blocks_path.exists():
+        print('Loading and setting allowed building blocks for each reaction...')
+        load_and_set_allowed_reaction_building_blocks(
+            reactions=reactions,
+            reaction_to_reactant_to_building_blocks_path=reaction_to_building_blocks_path
+        )
+    else:
+        for reaction in reactions:
+            for reactant in reaction.reactants:
+                reactant.allowed_building_blocks = [
+                    smiles
+                    for smiles in building_block_smiles
+                    if reactant.has_match(smiles)
+                ]
+
+    return reactions
+
+
 def generate(
         model_path: Path,
         save_dir: Path,
         building_blocks_path: Path,
-        reaction_to_building_blocks_path: Path | None = None,
         building_blocks_id_column: str = "reagent_id",
         target_activities: List[str] = ["gsk3b_activity", "jnk3_activity"],
         building_blocks_smiles_column: str = "smiles",
@@ -66,14 +221,14 @@ def generate(
         scalarize: bool = False,
         all_objectives: bool = False,
         n_proc: int = 48,
-        sequential: bool = False
+        sequential: bool = False,
+        reaction_to_building_blocks_path: Path | None = None
 ) -> None:
     """Generate molecules combinatorially using a multi-objective Monte Carlo tree search.
 
     :param model_path: Path to a directory of model checkpoints or to a specific PKL or PT file containing a trained model.
     :param building_blocks_path: Path to CSV file containing molecular building blocks.
     :param save_dir: Path to directory where the generated molecules will be saved.
-    :param reaction_to_building_blocks_path: Path to PKL file containing mapping from REAL reactions to allowed building blocks.
     :param building_blocks_id_column: Name of the column containing IDs for each building block.
     :param building_blocks_score_columns: List of column names containing scores for each objective.
     :param building_blocks_smiles_column: Name of the column containing SMILES for each building block.
@@ -95,85 +250,41 @@ def generate(
     :param all_objectives: Whether to use all objectives (activity1, activity2, dockingscore1, dockingscore2, qed, sa)
     :param n_proc: Number of processes to use for ligand preparation.
     :param sequential: Whether to run docking tasks sequentially.
+    :param reaction_to_building_blocks_path: Path to PKL file containing mapping from REAL reactions to allowed building blocks.
     """
-    if sum([bool(qed_sa), bool(scalarize), bool(all_objectives)]) > 1:
-        raise ValueError("Use only one of qed_sa, scalarize, or all_objectives at a time.")
-
-    reactions = _clone_reactions(reactions)
+    _validate_generation_modes(qed_sa=qed_sa, scalarize=scalarize, all_objectives=all_objectives)
 
     # Create save directory
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load building blocks
-    print('Loading building blocks...')
-    building_block_data = pd.read_csv(building_blocks_path)
-
-    print(f'Loaded {len(building_block_data):,} building blocks')
-
-    base_columns = [building_blocks_id_column, building_blocks_smiles_column, *target_activities]
-    docking_columns = ["ds_1", "ds_2"]
-    if qed_sa:
-        _require_columns(building_block_data, base_columns, "QED/SA generation")
-    else:
-        _require_columns(building_block_data, [*base_columns, *docking_columns], "activity/docking generation")
-
-    # Ensure unique building block IDs
-    if building_block_data[building_blocks_id_column].nunique() != len(building_block_data):
-        raise ValueError('Building block IDs are not unique.')
-
-    # Map building blocks SMILES to IDs, IDs to SMILES, and SMILES to scores
-    building_block_smiles_to_id = dict(zip(
-        building_block_data[building_blocks_smiles_column],
-        building_block_data[building_blocks_id_column]
-    ))
-    building_block_id_to_smiles = dict(zip(
-        building_block_data[building_blocks_id_column],
-        building_block_data[building_blocks_smiles_column]
-    ))
-
-    building_block_smiles_to_activities = {
-        0: dict(zip(
-            building_block_data[building_blocks_smiles_column],
-            building_block_data[target_activities[0]])), # activity1
-        1: dict(zip(
-            building_block_data[building_blocks_smiles_column],
-            building_block_data[target_activities[1]])) # activity2
-    }
-
-    if qed_sa:
-        building_block_smiles_to_docking_scores = [{}, {}]
-    else:
-        building_block_smiles_to_docking_scores = {
-            0: dict(zip(
-                building_block_data[building_blocks_smiles_column],
-                building_block_data["ds_1"])), # dockingscore1
-            1: dict(zip(
-                building_block_data[building_blocks_smiles_column],
-                building_block_data["ds_2"])) # dockingscore2
-        }
-
-    print(f'Found {len(building_block_smiles_to_id):,} unique building blocks')
-
-    # Set all building blocks for each reaction
-    set_all_building_blocks(
-        reactions=reactions,
-        building_blocks=set(building_block_smiles_to_id)
+    building_block_data = _load_building_block_data(
+        building_blocks_path=building_blocks_path,
+        building_blocks_id_column=building_blocks_id_column,
+        building_blocks_smiles_column=building_blocks_smiles_column,
+        target_activities=target_activities,
+        qed_sa=qed_sa
     )
-
-    # Optionally, set allowed building blocks for each reaction
-    if reaction_to_building_blocks_path is None:
-        reaction_to_building_blocks_path = get_target_pair_mapping_path(target_pair)
-    else:
-        reaction_to_building_blocks_path = Path(reaction_to_building_blocks_path)
-        if not reaction_to_building_blocks_path.exists():
-            raise FileNotFoundError(f"Reaction mapping does not exist: {reaction_to_building_blocks_path}")
-
-    if reaction_to_building_blocks_path.exists():
-        print('Loading and setting allowed building blocks for each reaction...')
-        load_and_set_allowed_reaction_building_blocks(
-            reactions=reactions,
-            reaction_to_reactant_to_building_blocks_path=reaction_to_building_blocks_path
-        )
+    building_block_smiles_to_id, building_block_id_to_smiles = _build_building_block_maps(
+        building_block_data=building_block_data,
+        building_blocks_id_column=building_blocks_id_column,
+        building_blocks_smiles_column=building_blocks_smiles_column
+    )
+    building_block_smiles_to_activities = _build_activity_score_cache(
+        building_block_data=building_block_data,
+        building_blocks_smiles_column=building_blocks_smiles_column,
+        target_activities=target_activities
+    )
+    building_block_smiles_to_docking_scores = _build_docking_score_cache(
+        building_block_data=building_block_data,
+        building_blocks_smiles_column=building_blocks_smiles_column,
+        qed_sa=qed_sa
+    )
+    reactions = _prepare_reactions(
+        reactions=reactions,
+        building_block_smiles=set(building_block_smiles_to_id),
+        target_pair=target_pair,
+        reaction_to_building_blocks_path=reaction_to_building_blocks_path
+    )
 
     # Define model scoring function
     print('Loading models and creating model scoring function...')
@@ -182,24 +293,12 @@ def generate(
         model_type="chemprop",
         smiles_to_scores=building_block_smiles_to_activities # dict[dict[smiles:act1], dict[smiles:act2]]
     )
-    if qed_sa or all_objectives:
-        if qed_sa:
-            print('Using QED and SA as objectives - No docking scores will be used')
-        else:
-            print('Using all objectives: activity1, activity2, dockingscore1, dockingscore2, qed, sa')
-        if "qed" in building_block_data.columns and "sa" in building_block_data.columns:
-            building_block_smiles_to_qed_sa = {
-                0: dict(zip(
-                    building_block_data[building_blocks_smiles_column],
-                    building_block_data["qed"])),
-                1: dict(zip(
-                    building_block_data[building_blocks_smiles_column],
-                    building_block_data["sa"]))
-            }
-        else:
-            building_block_smiles_to_qed_sa = None
-    else:
-        building_block_smiles_to_qed_sa = None
+    building_block_smiles_to_qed_sa = _build_qed_sa_cache(
+        building_block_data=building_block_data,
+        building_blocks_smiles_column=building_blocks_smiles_column,
+        qed_sa=qed_sa,
+        all_objectives=all_objectives
+    )
 
     # Set up Generator
     print('Setting up generator...')
@@ -223,14 +322,14 @@ def generate(
         scalarize=scalarize,
         all_objectives=all_objectives,
         building_block_smiles_to_qed_sa=building_block_smiles_to_qed_sa,
-        n_proc= n_proc,
+        n_proc=n_proc,
         sequential=sequential
     )
 
     # Search for molecules
     print('Generating molecules...')
     start_time = datetime.now()
-    nodes = generator.generate(n_rollout=n_rollout, save_dir=save_dir ,save_freq=save_freq)
+    nodes = generator.generate(n_rollout=n_rollout, save_dir=save_dir, save_freq=save_freq)
 
     # Save generated molecules
     print('Saving molecules...')

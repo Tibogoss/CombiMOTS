@@ -18,6 +18,9 @@ from pmcts.utils import random_choice
 from pmcts.generate.utils import save_generated_molecules
 
 
+DockingFunction = Callable[[Dict[Node, Tuple[str, ...]], str, int, bool], Tuple[Dict[Node, float], Dict[Node, float]]]
+
+
 class Generator:
     """Dual-target molecule generator using multi-objective Pareto MCTS."""
 
@@ -27,7 +30,7 @@ class Generator:
             building_block_id_to_smiles: dict[int, str],
             max_reactions: int,
             scoring_fn: Callable[[str], List[float]],  # activity prediction
-            precomp_ds: List[dict[str, float]],
+            precomp_ds: dict[int, dict[str, float]],
             target_pair: str,
             explore_weight: float,
             pareto_function: str | None,
@@ -41,9 +44,10 @@ class Generator:
             qed_sa: bool = False,
             scalarize: bool = False,
             all_objectives: bool = False,
-            building_block_smiles_to_qed_sa: List[dict[str, float]] | None = None,
+            building_block_smiles_to_qed_sa: dict[int, dict[str, float]] | None = None,
             n_proc: int = 48,
-            sequential: bool = False
+            sequential: bool = False,
+            docking_fn: DockingFunction | None = None
     ) -> None:
         """Creates the Generator.
 
@@ -69,6 +73,7 @@ class Generator:
         :param building_block_smiles_to_qed_sa: A list of dictionaries mapping building block SMILES to their QED and SA scores.
         :param n_proc: Number of processes to use for ligand preparation.
         :param sequential: Whether to run docking tasks sequentially.
+        :param docking_fn: Optional docking function for tests or alternate docking backends.
         """
         self.building_block_smiles_to_id = building_block_smiles_to_id
         self.building_block_id_to_smiles = building_block_id_to_smiles
@@ -90,6 +95,8 @@ class Generator:
         self.building_block_smiles_to_qed_sa = building_block_smiles_to_qed_sa
         self.n_proc = n_proc
         self.sequential = sequential
+        self.docking_fn = docking_fn or batch_dock
+        self.docking_score_cache: dict[str, tuple[float, float]] = {}
         
         # Cache for QED/SA scores to avoid repeated calculations
         self.qed_cache = {}
@@ -225,6 +232,87 @@ class Generator:
         except (TypeError, ValueError):
             return default
         return value if np.isfinite(value) else default
+
+    @staticmethod
+    def _sa_objective(sa_score: float) -> float:
+        """Return the existing higher-is-better SA objective used by MCTS."""
+
+        return (10 - sa_score) / 9
+
+    @staticmethod
+    def _is_scored(node: Node) -> bool:
+        return not np.array_equal(node.P, np.zeros(node.P.shape))
+
+    def _score_nodes(self, nodes: list[Node], n_proc: int) -> None:
+        """Compute objective vectors for unscored nodes in-place."""
+
+        nodes_to_score = [node for node in nodes if not self._is_scored(node)]
+        if not nodes_to_score:
+            return
+
+        docking_scores = {} if self.qed_sa else self._get_docking_scores(nodes_to_score, n_proc=n_proc)
+        for node in nodes_to_score:
+            node.P = self._compute_objective_scores(node, docking_scores.get(node))
+
+    def _compute_objective_scores(
+        self,
+        node: Node,
+        docking_scores: tuple[float, float] | None = None,
+    ) -> np.ndarray:
+        activities = node.compute_score(molecules=node.molecules, scoring_fn=node.scoring_fn)
+
+        if self.qed_sa:
+            avg_qed, avg_sa = self.calculate_qed_sa_scores(node.molecules)
+            return np.array([activities[0], activities[1], avg_qed, self._sa_objective(avg_sa)])
+
+        if docking_scores is None:
+            raise ValueError("Docking scores are required for this objective mode")
+        ds1, ds2 = docking_scores
+
+        if self.scalarize:
+            node.save_scores = np.array([activities[0], activities[1], ds1, ds2])
+            return np.array([(activities[0] + activities[1] - ds1 / 20.0 - ds2 / 20.0) / 4])
+
+        if self.all_objectives:
+            avg_qed, avg_sa = self.calculate_qed_sa_scores(node.molecules)
+            return np.array([
+                activities[0],
+                activities[1],
+                -ds1 / 20.0,
+                -ds2 / 20.0,
+                avg_qed,
+                self._sa_objective(avg_sa),
+            ])
+
+        return np.array([activities[0], activities[1], -ds1 / 20.0, -ds2 / 20.0])
+
+    def _get_docking_scores(self, nodes: list[Node], n_proc: int) -> dict[Node, tuple[float, float]]:
+        """Return docking scores for nodes using precomputed values, cache, or docking_fn."""
+
+        docking_scores: dict[Node, tuple[float, float]] = {}
+        nodes_to_dock: dict[Node, tuple[str, ...]] = {}
+
+        for node in nodes:
+            if not node.molecules:
+                docking_scores[node] = (0.0, 0.0)
+                continue
+
+            smiles = node.molecules[0]
+            if smiles in self.precomp_ds[0]:
+                docking_scores[node] = (self.precomp_ds[0][smiles], self.precomp_ds[1][smiles])
+            elif smiles in self.docking_score_cache:
+                docking_scores[node] = self.docking_score_cache[smiles]
+            else:
+                nodes_to_dock[node] = node.molecules
+
+        if nodes_to_dock:
+            ds1_scores, ds2_scores = self.docking_fn(nodes_to_dock, self.target_pair, n_proc, self.sequential)
+            for node, molecules in nodes_to_dock.items():
+                scores = (ds1_scores.get(node, 0.0), ds2_scores.get(node, 0.0))
+                self.docking_score_cache[molecules[0]] = scores
+                docking_scores[node] = scores
+
+        return docking_scores
 
     def get_next_building_blocks(self, molecules: tuple[str]) -> list[str]:
         """Get the next building blocks that can be added to the given molecules.
@@ -453,53 +541,9 @@ class Generator:
 
         # Stop the search if we've reached the maximum number of reactions
         if node.num_reactions >= self.max_reactions:
-            if not np.array_equal(node.P, np.zeros(node.P.size)): # Properties are computed
-                return node.P
-            ############################################
-            else: # Need to compute properties
-                # QED/SA optimization mode
-                if self.qed_sa:
-                    activities = node.compute_score(molecules=node.molecules, scoring_fn=node.scoring_fn)
-                    avg_qed, avg_sa = self.calculate_qed_sa_scores(node.molecules)
-                    node.P = np.array([
-                        activities[0], 
-                        activities[1],
-                        avg_qed, 
-                        (10-avg_sa)/9  # -> [0, 1] maximization
-                    ])
-                    return node.P
-                # Other modes
-                elif self.scalarize:
-                    node_mol = {}
-                    node_mol[node] = node.molecules
-                    activities = node.compute_score(molecules=node.molecules, scoring_fn=node.scoring_fn)
-                    node_ds1, node_ds2 = batch_dock(node_mol, target=self.target_pair, n_proc=1, sequential=self.sequential)
-                    node.P = np.array([(activities[0]+activities[1]-node_ds1[node]/20.0 -node_ds2[node]/20.0)/4]) # -> [0, 1] maximization
-                    node.save_scores = np.array([activities[0],activities[1],node_ds1[node], node_ds2[node]])
-                    return node.P
-                elif self.all_objectives:
-                    node_mol = {}
-                    node_mol[node] = node.molecules
-                    activities = node.compute_score(molecules=node.molecules, scoring_fn=node.scoring_fn)
-                    avg_qed, avg_sa = self.calculate_qed_sa_scores(node.molecules)
-                    node_ds1, node_ds2 = batch_dock(node_mol, target=self.target_pair, n_proc=1, sequential=self.sequential)
-                    node.P = np.array([activities[0], 
-                                activities[1],
-                                -node_ds1[node]/20.0, 
-                                -node_ds2[node]/20.0,
-                                avg_qed,
-                                (10-avg_sa)/9])
-                    return node.P
-                else:
-                    node_mol = {}
-                    node_mol[node] = node.molecules
-                    node_ds1, node_ds2 = batch_dock(node_mol, target=self.target_pair, n_proc=1, sequential=self.sequential)
-                    activities = node.compute_score(molecules=node.molecules, scoring_fn=node.scoring_fn)
-                    node.P = np.array([activities[0], 
-                                    activities[1],
-                                    -node_ds1[node]/20.0, 
-                                    -node_ds2[node]/20.0])
-                    return node.P
+            if not self._is_scored(node):
+                self._score_nodes([node], n_proc=1)
+            return node.P
 
         # If this node has already been visited and the children have been stored, get its children from the dictionary
         if node in self.node_to_children:
@@ -513,91 +557,7 @@ class Generator:
             # Check the node map and merge with an existing node if available
             child_nodes = [self.node_map.get(new_node, new_node) for new_node in child_nodes]
 
-            # Process nodes differently based on mode
-            if self.qed_sa:
-                # all nodes at once
-                for child_node in child_nodes:
-                    # Skip if already computed
-                    if not np.array_equal(child_node.P, np.zeros(child_node.P.shape)):
-                        continue
-                        
-                    activities = child_node.compute_score(molecules=child_node.molecules, scoring_fn=child_node.scoring_fn)
-                    avg_qed, avg_sa = self.calculate_qed_sa_scores(child_node.molecules)
-                    
-                    # set properties
-                    child_node.P = np.array([
-                        activities[0],
-                        activities[1],
-                        avg_qed,
-                        (10-avg_sa)/9
-                    ])
-            else:
-                not_blocks_to_mol = {}    # dict[Node, tuple[str]] = node -> [molecule1, molecule2...]
-                precomp_blocks = []     # List[Node]
-                
-                for child_node in child_nodes:
-                    if child_node.molecules[0] not in self.precomp_ds[0]:
-                        not_blocks_to_mol[child_node] = child_node.molecules
-                    else:
-                        precomp_blocks.append(child_node)
-
-                # docking scores based on mode
-                if self.all_objectives:
-                    # compute for non-building blocks
-                    children_ds1, children_ds2 = batch_dock(not_blocks_to_mol, target=self.target_pair, n_proc=self.n_proc, sequential=self.sequential)
-                    
-                    # add precomputed blocks' scores (lookup)
-                    for block in precomp_blocks:
-                        children_ds1[block] = self.precomp_ds[0][block.molecules[0]]
-                        children_ds2[block] = self.precomp_ds[1][block.molecules[0]]
-                    
-                    # activities, qed, sa
-                    for child_node in child_nodes:
-                        if not np.array_equal(child_node.P, np.zeros(child_node.P.shape)):
-                            continue
-                            
-                        activities = child_node.compute_score(molecules=child_node.molecules, scoring_fn=child_node.scoring_fn)
-                        avg_qed, avg_sa = self.calculate_qed_sa_scores(child_node.molecules)
-                        
-                        child_node_ds1 = children_ds1[child_node]
-                        child_node_ds2 = children_ds2[child_node]
-                        
-                        child_node.P = np.array([
-                            activities[0],
-                            activities[1],
-                            -child_node_ds1/20.0,
-                            -child_node_ds2/20.0,
-                            avg_qed,
-                            (10-avg_sa)/9
-                        ])
-                else:
-                    # compute docking scores
-                    children_ds1, children_ds2 = batch_dock(not_blocks_to_mol, target=self.target_pair, n_proc=self.n_proc, sequential=self.sequential)
-                    
-                    # precomputed blocks' scores (lookup)
-                    for block in precomp_blocks:
-                        children_ds1[block] = self.precomp_ds[0][block.molecules[0]]
-                        children_ds2[block] = self.precomp_ds[1][block.molecules[0]]
-                    
-                    # assign scores
-                    for child_node in child_nodes:
-                        if not np.array_equal(child_node.P, np.zeros(child_node.P.shape)):
-                            continue
-                            
-                        activities = child_node.compute_score(molecules=child_node.molecules, scoring_fn=child_node.scoring_fn)
-                        
-                        if self.scalarize:
-                            ds1 = children_ds1[child_node]
-                            ds2 = children_ds2[child_node]
-                            child_node.P = np.array([(activities[0] + activities[1] - ds1/20.0 - ds2/20.0)/4])
-                            child_node.save_scores = np.array([activities[0], activities[1], ds1, ds2])
-                        else:
-                            child_node.P = np.array([
-                                activities[0],
-                                activities[1],
-                                -children_ds1[child_node]/20.0,
-                                -children_ds2[child_node]/20.0
-                            ])
+            self._score_nodes(child_nodes, n_proc=self.n_proc)
 
             # Add complete molecules to the node map
             for child_node in child_nodes:
