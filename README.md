@@ -62,10 +62,11 @@ pmcts-validate-docking --target-pair gsk3b_jnk3
 
 `setup_docking.py` writes `COMBIMOTS_DOCKING_PATH` to `.env`, replacing the legacy hardcoded `DOCKING_PATH_PREFIX`. If local Boost/OpenCL paths are non-standard, pass `--boost-lib-path` or `--opencl-lib-path`, or run `make source` manually inside `combimots/pmcts/docking/Vina-GPU-2.1/QuickVina2-GPU-2.1`.
 
-Check OpenCL before running docking-heavy steps:
+Check OpenCL before running docking-heavy steps. `clinfo` is diagnostic; `pmcts-validate-docking` is the decisive check because some HPC modules make QuickVina work even when the `clinfo` executable reports no platforms:
 
 ```sh
 clinfo -l
+pmcts-validate-docking --target-pair gsk3b_jnk3
 ```
 
 # Pipeline

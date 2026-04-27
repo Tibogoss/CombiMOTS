@@ -40,11 +40,33 @@ if [[ "$WITH_MGLTOOLS" == "1" ]]; then
   }
 fi
 
+configure_nvidia_opencl_icd() {
+  local icd_dir="$CONDA_PREFIX/etc/OpenCL/vendors"
+  local candidate
+
+  mkdir -p "$icd_dir"
+  for candidate in \
+    /usr/local/nvidia/lib64/libnvidia-opencl.so.1 \
+    /usr/lib/x86_64-linux-gnu/libnvidia-opencl.so.1 \
+    "$CONDA_PREFIX/lib/libnvidia-opencl.so.1"; do
+    if [[ -e "$candidate" ]]; then
+      printf '%s\n' "$candidate" > "$icd_dir/nvidia.icd"
+      echo "Configured NVIDIA OpenCL ICD: $candidate"
+      return 0
+    fi
+  done
+
+  echo "Warning: NVIDIA OpenCL library was not found; leaving existing OpenCL ICD files unchanged." >&2
+  return 0
+}
+
+configure_nvidia_opencl_icd
+
 if [[ -z "${OCL_ICD_VENDORS:-}" ]]; then
-  if [[ -d /etc/OpenCL/vendors ]]; then
-    export OCL_ICD_VENDORS=/etc/OpenCL/vendors
-  elif [[ -d "$CONDA_PREFIX/etc/OpenCL/vendors" ]]; then
+  if [[ -n "$(compgen -G "$CONDA_PREFIX/etc/OpenCL/vendors/*.icd" || true)" ]]; then
     export OCL_ICD_VENDORS="$CONDA_PREFIX/etc/OpenCL/vendors"
+  elif [[ -d /etc/OpenCL/vendors ]]; then
+    export OCL_ICD_VENDORS=/etc/OpenCL/vendors
   fi
 fi
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -64,10 +86,10 @@ if [ -n "${OCL_ICD_VENDORS-}" ]; then
 else
   unset _COMBIMOTS_OLD_OCL_ICD_VENDORS
 fi
-if [ -d /etc/OpenCL/vendors ]; then
-  export OCL_ICD_VENDORS=/etc/OpenCL/vendors
-elif [ -d "${CONDA_PREFIX}/etc/OpenCL/vendors" ]; then
+if ls "${CONDA_PREFIX}/etc/OpenCL/vendors"/*.icd >/dev/null 2>&1; then
   export OCL_ICD_VENDORS="${CONDA_PREFIX}/etc/OpenCL/vendors"
+elif [ -d /etc/OpenCL/vendors ]; then
+  export OCL_ICD_VENDORS=/etc/OpenCL/vendors
 fi
 ACTIVATE
 cat > "$CONDA_PREFIX/etc/conda/deactivate.d/combimots_env.sh" <<'DEACTIVATE'
