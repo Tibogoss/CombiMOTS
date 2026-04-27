@@ -30,7 +30,7 @@ To accelerate molecular docking simulation, we utilize **QuickVina-GPU-2.1** fro
 Implementation was originally conducted with Python 3.10 and CUDA 11.7. The setup script creates the conda environment, installs Python dependencies with uv, and installs CombiMOTS editable from `combimots/.`.
 
 ```sh
-bash setup_fresh_env.sh combimots
+bash setup_env.sh combimots
 ```
 
 On HPC systems, load the CUDA/NVIDIA module before activating the environment:
@@ -41,13 +41,13 @@ unset LD_LIBRARY_PATH OCL_ICD_VENDORS
 module load CUDA/12.8.0  # or the CUDA module provided by your cluster
 ```
 
-Activate CombiMOTS and expose the NVIDIA OpenCL ICD:
+Activate CombiMOTS. `setup_env.sh` installs activation hooks that put `$CONDA_PREFIX/lib` before system libraries and expose the NVIDIA OpenCL ICD when present:
 
 ```sh
 conda activate combimots
-if [ -d /etc/OpenCL/vendors ]; then export OCL_ICD_VENDORS=/etc/OpenCL/vendors; fi
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CONDA_PREFIX/lib
 ```
+
+For existing environments without those hooks, run `export LD_LIBRARY_PATH=$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}` before `chemfunc`, Chemprop, or docking commands. This avoids HPC `GLIBCXX_* not found` errors from pip-installed packages loading the system `libstdc++`.
 
 QED/SA objectives require PyTDC, which is optional by default. Install it only when running `pmcts --qed_sa`, `pmcts --all_objectives`, or `combimots/postprocess/10-evaluate.py`:
 
@@ -113,7 +113,7 @@ Pre-processing includes (in order):
 - Similarity mapping from fragments to Enamine REAL building blocks, default Tanimoto threshold `0.4`;
 - Salt stripping/canonicalization with `chemfunc` before reaction mapping;
 - Empty, invalid, disconnected, and duplicate canonical SMILES cleanup;
-- B, Si, and Li filtering for QuickVina compatibility;
+- B, Si, and Li filtering for QuickVina compatibility, including fallback REAL blocks;
 - Building-block bioactivity prediction with Chemprop checkpoints;
 - Building-block docking score precomputation with QuickVina-GPU;
 - REAL search-space mapping and reaction-template filtering.

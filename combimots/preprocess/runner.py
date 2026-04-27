@@ -247,7 +247,7 @@ def build_plan(args: argparse.Namespace) -> list[StepPlan]:
         ),
         StepPlan(
             name="canonicalize-smiles",
-            description="Canonicalize candidate blocks and remove salts",
+            description="Canonicalize candidate blocks, remove salts, and drop invalid/disconnected SMILES",
             commands=(
                 (
                     args.chemfunc_command,
@@ -756,20 +756,31 @@ def _run_canonicalize_smiles(input_file: Path, output_file: Path, report_path: P
     from preprocess.filters import clean_building_block_dataframe
 
     input_rows = len(pd.read_csv(input_file)) if input_file.exists() else 0
-    subprocess.run(
-        [
-            command,
-            "canonicalize_smiles",
-            "--data_path", str(input_file),
-            "--save_path", str(output_file),
-            "--remove_salts",
-            "--delete_disconnected_mols",
-        ],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            [
+                command,
+                "canonicalize_smiles",
+                "--data_path", str(input_file),
+                "--save_path", str(output_file),
+                "--remove_salts",
+                "--delete_disconnected_mols",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        details = (error.stderr or error.stdout or "").strip()
+        hint = (
+            "If this mentions GLIBCXX or libstdc++, reactivate the conda environment created by "
+            "setup_env.sh or export LD_LIBRARY_PATH=$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}."
+        )
+        raise RuntimeError(f"{command} canonicalize_smiles failed. {hint}\n{details}") from error
     output_df = pd.read_csv(output_file) if output_file.exists() else pd.DataFrame(columns=["smiles"])
     chemfunc_rows = len(output_df)
     cleaned_df, cleanup_metrics = clean_building_block_dataframe(output_df)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     cleaned_df.to_csv(output_file, index=False)
     result = StepResult(
         step="canonicalize-smiles",
