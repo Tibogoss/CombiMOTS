@@ -94,6 +94,7 @@ uv pip install --python "$UV_PYTHON" torch-geometric==2.0.4
 
 uv pip install --python "$UV_PYTHON" -r requirements.txt
 uv pip install --python "$UV_PYTHON" --no-deps -e combimots/.
+uv pip install --python "$UV_PYTHON" pytdc
 uv pip install --python "$UV_PYTHON" "pandas==1.5.3"
 
 python -B -c "from setuptools import find_packages; print(find_packages('combimots'))"
@@ -104,6 +105,7 @@ python -B -c "import torch_geometric; print(torch_geometric.__version__)"
 python -B -c "from rdkit import Chem; print(Chem.MolToSmiles(Chem.MolFromSmiles('CCO')))"
 python -B -c "import chemprop; print('chemprop import ok')"
 python -B -c "from PIL import Image; import matplotlib; print('matplotlib/PIL import ok')"
+python -B -c "from tdc import Oracle; print(Oracle(name='qed')('CCO'))"
 obabel -V
 opencl_platforms="$(clinfo -l 2>/dev/null || true)"
 if [[ -n "$opencl_platforms" ]]; then
@@ -117,7 +119,7 @@ chemprop_predict --help >/dev/null
 chemfunc canonicalize_smiles --help >/dev/null
 combimots-preprocess --help >/dev/null
 pmcts-validate-docking --help >/dev/null
-uv pip check --python "$UV_PYTHON"
+python -m pip check
 
 if [[ "$WITH_DOCKING_SETUP" == "1" ]]; then
   python setup_docking.py

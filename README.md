@@ -39,20 +39,16 @@ On HPC systems, load the CUDA/NVIDIA module before activating the environment:
 conda deactivate
 unset LD_LIBRARY_PATH OCL_ICD_VENDORS
 module load CUDA/12.8.0  # or the CUDA module provided by your cluster
+
+# For existing environments without those hooks, run
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+# before `chemfunc`, Chemprop, or docking commands. This avoids HPC `GLIBCXX_* not found` errors from pip-installed packages loading the system `libstdc++`.
 ```
 
 Activate CombiMOTS. `setup_env.sh` installs activation hooks that put `$CONDA_PREFIX/lib` before system libraries and expose the NVIDIA OpenCL ICD when present:
 
 ```sh
 conda activate combimots
-```
-
-For existing environments without those hooks, run `export LD_LIBRARY_PATH=$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}` before `chemfunc`, Chemprop, or docking commands. This avoids HPC `GLIBCXX_* not found` errors from pip-installed packages loading the system `libstdc++`.
-
-QED/SA objectives require PyTDC, which is optional by default. Install it only when running `pmcts --qed_sa`, `pmcts --all_objectives`, or `combimots/postprocess/10-evaluate.py`:
-
-```sh
-uv pip install --python "$CONDA_PREFIX/bin/python" pytdc
 ```
 
 ## Docking Setup
