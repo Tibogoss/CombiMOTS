@@ -25,6 +25,9 @@ The 13 **Enamine** (https://enamine.net/) REAL Space and corresponding reactions
 
 To accelerate molecular docking simulation, we utilize **QuickVina-GPU-2.1** from https://pubmed.ncbi.nlm.nih.gov/39320991/
 
+> [!IMPORTANT]
+> This branch has been largely refactored for easier installation, preprocessing, docking setup, and generation. Legacy checkpoints and processed data are still included, but retraining the full pipeline from scratch WILL produce results that differ from the manuscript because model training, search-space reduction, docking, and stochastic generation are environment-sensitive. The original legacy code will remain available on the `legacy` branch.
+
 
 # Install Environment
 Implementation was originally conducted with Python 3.10 and CUDA 11.7. The setup script creates the conda environment, installs Python dependencies with uv, and installs CombiMOTS editable from `combimots/.`.
@@ -62,11 +65,10 @@ pmcts-validate-docking --target-pair gsk3b_jnk3
 
 `setup_docking.py` writes `COMBIMOTS_DOCKING_PATH` to `.env`, replacing the legacy hardcoded `DOCKING_PATH_PREFIX`. If local Boost/OpenCL paths are non-standard, pass `--boost-lib-path` or `--opencl-lib-path`, or run `make source` manually inside `combimots/pmcts/docking/Vina-GPU-2.1/QuickVina2-GPU-2.1`.
 
-Check OpenCL before running docking-heavy steps. `clinfo` is diagnostic; `pmcts-validate-docking` is the decisive check because some HPC modules make QuickVina work even when the `clinfo` executable reports no platforms:
+Check OpenCL before running docking-heavy steps. `clinfo` is diagnostic.
 
 ```sh
 clinfo -l
-pmcts-validate-docking --target-pair gsk3b_jnk3
 ```
 
 # Pipeline
