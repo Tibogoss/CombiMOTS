@@ -21,19 +21,6 @@ from pmcts.generate.utils import save_generated_molecules
 DockingFunction = Callable[[Dict[Node, Tuple[str, ...]], str, int, bool], Tuple[Dict[Node, float], Dict[Node, float]]]
 
 
-def _sanitize_product_smiles(product: Chem.Mol) -> str | None:
-    try:
-        product = Chem.Mol(product)
-        Chem.SanitizeMol(product)
-        product = Chem.RemoveHs(product)
-        Chem.SanitizeMol(product)
-        if len(Chem.GetMolFrags(product)) > 1:
-            return None
-        return Chem.MolToSmiles(product, canonical=True)
-    except Exception:
-        return None
-
-
 class Generator:
     """Dual-target molecule generator using multi-objective Pareto MCTS."""
 
@@ -411,21 +398,13 @@ class Generator:
             # Put molecules in the right order for the reaction
             molecules = sorted(node.molecules, key=lambda frag: molecule_to_reactant_index[frag])
 
-            try:
-                products = reaction.run_reactants(molecules)
-            except Exception:
-                continue
+            # Run reaction
+            products = reaction.run_reactants(molecules)
 
-            if len(products) == 0:
-                continue
+            assert all(len(product) == 1 for product in products)
 
-            products = [
-                smiles
-                for product in products
-                if len(product) == 1 and (smiles := _sanitize_product_smiles(product[0])) is not None
-            ]
-            if not products:
-                continue
+            # Convert product mols to SMILES and remove Hs.
+            products = [Chem.MolToSmiles(Chem.RemoveHs(product[0])) for product in products]
 
             # Filter out products that have already been created and deduplicate
             products = list(dict.fromkeys(product for product in products if product not in product_set))
