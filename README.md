@@ -177,7 +177,7 @@ If you find our paper/repo useful or use it for personal projects/research, plea
 ```bibtex -->
 @inproceedings{
 southiratn2025combimots,
-title={Combi{MOTS}: Combinatorial Multi-Objective Tree Search for Dual-Target Molecule Generation},
+title={CombiMOTS: Combinatorial Multi-Objective Tree Search for Dual-Target Molecule Generation},
 author={Thibaud Southiratn and Bonil Koo and Yijingxiu Lu and Sun Kim},
 booktitle={Forty-second International Conference on Machine Learning},
 year={2025},
